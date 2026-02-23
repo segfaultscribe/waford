@@ -2,6 +2,7 @@ package internal
 
 import (
 	"log/slog"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,8 +16,9 @@ type JobManager struct {
 
 type Server struct {
 	Router *chi.Mux
-	jm     *JobManager // The buffer lives here!
-	logger *slog.Logger
+	JM     *JobManager // The buffer lives here!
+	Logger *slog.Logger
+	WG     *sync.WaitGroup
 }
 
 func CreateServer(bufferSize int, lg *slog.Logger) *Server {
@@ -28,8 +30,9 @@ func CreateServer(bufferSize int, lg *slog.Logger) *Server {
 
 	s := &Server{
 		Router: chi.NewRouter(),
-		jm:     jm,
-		logger: lg,
+		JM:     jm,
+		Logger: lg,
+		WG:     &sync.WaitGroup{},
 	}
 
 	s.Router.Use(middleware.Logger)

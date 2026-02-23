@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -14,12 +15,12 @@ var httpClient = &http.Client{
 	Timeout: 5 * time.Second,
 }
 
-func sendRequest(eventId string, url string, body json.RawMessage) error {
-	req, err := http.NewRequest(
-		"POST",
-		url,
-		bytes.NewReader(body),
-	)
+func sendRequest(ctx context.Context, eventId string, url string, body json.RawMessage) error {
+	// make request with context
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
 
 	if err != nil {
 		return err
@@ -42,40 +43,56 @@ func sendRequest(eventId string, url string, body json.RawMessage) error {
 }
 
 func (s *Server) handleFreshJob() {
-	for current := range s.jm.JobBuffer {
+	defer s.WG.Done()
+
+	for current := range s.JM.JobBuffer {
 		// we are guarenteed that the work that arrives in this buffer is a
 		// fresh job so we don't have to be bothered by RetryCount
 
+		// create context
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
 		//send the request
-		if err := sendRequest(current.EventID, current.Destination, current.Payload); err != nil {
+		err := sendRequest(ctx, current.EventID, current.Destination, current.Payload)
+		cancel()
+
+		if err != nil {
 			current.LastError = err.Error()
 			// add this job to the retry after upping the count
 			delay := expBackoff(current.RetryCount)
 			// 3. Fire-and-forget the requeue so this worker isn't blocked waiting
 			time.AfterFunc(delay, func() {
-				s.jm.RetryBuffer <- current
+				s.JM.RetryBuffer <- current
 			})
 		}
 	}
 }
 
 func (s *Server) handleRetries() {
-	for current := range s.jm.RetryBuffer {
+	defer s.WG.Done()
+
+	for current := range s.JM.RetryBuffer {
 
 		if current.RetryCount > 3 {
-			s.jm.DLQBuffer <- current
+			s.JM.DLQBuffer <- current
 			continue
 		}
 
 		current.RetryCount++
 
-		if err := sendRequest(current.EventID, current.Destination, current.Payload); err != nil {
+		// create context
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+		err := sendRequest(ctx, current.EventID, current.Destination, current.Payload)
+		cancel()
+
+		if err != nil {
 			current.LastError = err.Error()
 			// add this job to the retry after upping the count
 			delay := expBackoff(current.RetryCount)
 			// 3. Fire-and-forget the requeue so this worker isn't blocked waiting
 			time.AfterFunc(delay, func() {
-				s.jm.RetryBuffer <- current
+				s.JM.RetryBuffer <- current
 			})
 		}
 	}
@@ -97,16 +114,19 @@ func expBackoff(count int) time.Duration {
 func (s *Server) StartWorkers(numFreshWorkers int, numRetryWorkers int, numDLQWorkers int) {
 	// Spin up a fleet of workers for fresh incoming webhooks
 	for i := 0; i < numFreshWorkers; i++ {
+		s.WG.Add(1)
 		go s.handleFreshJob()
 	}
 
 	// Spin up a smaller, separate fleet just for retries so they
 	// don't block fresh traffic
 	for i := 0; i < numRetryWorkers; i++ {
+		s.WG.Add(1)
 		go s.handleRetries()
 	}
 
 	for i := 0; i < numDLQWorkers; i++ {
+		s.WG.Add(1)
 		go s.handleDLQ()
 	}
 

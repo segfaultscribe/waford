@@ -14,7 +14,9 @@ func (s *Server) handleDLQ() {
 	}
 	defer file.Close()
 
-	for deadJob := range s.jm.DLQBuffer {
+	defer s.WG.Done()
+
+	for deadJob := range s.JM.DLQBuffer {
 		// Convert the struct to a JSON byte array
 		jobBytes, err := json.Marshal(deadJob)
 		if err != nil {
@@ -25,6 +27,6 @@ func (s *Server) handleDLQ() {
 		file.Write(jobBytes)
 		file.WriteString("\n")
 
-		s.logger.Warn("Job moved to DLQ", "event_id", deadJob.EventID)
+		s.Logger.Warn("Job moved to DLQ", "event_id", deadJob.EventID)
 	}
 }

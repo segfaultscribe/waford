@@ -27,7 +27,7 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 			Destination: dest,
 		}
 
-		s.jm.JobBuffer <- newJob
+		s.JM.JobBuffer <- newJob
 	}
 
 	w.WriteHeader(http.StatusAccepted)
