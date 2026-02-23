@@ -66,7 +66,8 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 					select {
 					case <-ctx.Done():
 						// server shuting down
-						// Safely abort. Can write to DLQ here, but I'm too lazy to do that
+						// Safely abort.
+						// Can write to DLQ here, but I'm too lazy
 						return
 					case <-time.After(d):
 						s.JM.RetryBuffer <- j
@@ -77,29 +78,6 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 
 	}
 }
-
-// 	for current := range s.JM.JobBuffer {
-// 		// we are guarenteed that the work that arrives in this buffer is a
-// 		// fresh job so we don't have to be bothered by RetryCount
-
-// 		// create context
-// 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-// 		//send the request
-// 		err := sendRequest(ctx, current.EventID, current.Destination, current.Payload)
-// 		cancel()
-
-// 		if err != nil {
-// 			current.LastError = err.Error()
-// 			delay := expBackoff(current.RetryCount)
-
-// 			// non blocking wait
-// 			time.AfterFunc(delay, func() {
-// 				s.JM.RetryBuffer <- current
-// 			})
-// 		}
-// 	}
-// }
 
 func (s *Server) handleRetries(ctx context.Context) {
 	defer s.WG.Done()
