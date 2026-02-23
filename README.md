@@ -15,6 +15,9 @@ cd waford
 
 // install dependencies
 go mod tidy
+
+// run the program
+go run main.go
 ```
 
 
