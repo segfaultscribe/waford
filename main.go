@@ -20,8 +20,10 @@ func main() {
 	// create the server
 	app := internal.CreateServer(100, logger)
 
+	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopApp()
 	// start all workers before server goes up
-	app.StartWorkers(100, 10, 1)
+	app.StartWorkers(appCtx, 100, 10, 1)
 
 	srvr := &http.Server{
 		Addr:    ":3000",
@@ -42,29 +44,22 @@ func main() {
 		}
 	}()
 
-	// Channel to listen for OS signals for graceful shutdown
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	// Block the main thread here until a signal is received
-	<-stop
+	// Block the main thread until the OS signal cancels the context
+	<-appCtx.Done()
 	slog.Info("Shutdown signal received. Commencing graceful shutdown...")
 
-	// Give the HTTP time to finish sending 202 Accepted to active clients; current: 5 seconds
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srvr.Shutdown(ctx); err != nil {
-		slog.Error("HTTP server shutdown error", "error", err)
-	}
+	// Shutdown the HTTP server so no new webhooks arrive
+	shutdownCtx, cancelHTTP := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelHTTP()
+	srvr.Shutdown(shutdownCtx)
 
-	// Close the channels; break loop
-	close(app.JM.JobBuffer)
-	close(app.JM.RetryBuffer)
-	close(app.JM.DLQBuffer)
-
+	// Wait for the workers to finish their current requests
+	// Because appCtx was canceled, the 'select' loops in the workers will hit
+	// case <-ctx.Done() and exit, eventually calling wg.Done().
+	// so we now handle the panic problem :)
 	slog.Info("Waiting for background workers to finish...")
 	app.WG.Wait()
 
-	slog.Info("Graceful shutdown complete. Goodbye!")
+	slog.Info("Graceful shutdown complete. Goodnight!")
 
 }

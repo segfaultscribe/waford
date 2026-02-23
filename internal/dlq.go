@@ -1,32 +1,37 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 )
 
-func (s *Server) handleDLQ() {
+func (s *Server) handleDLQ(ctx context.Context) {
+	defer s.WG.Done()
 	// Open the file in Append mode
 	file, err := os.OpenFile("dlq.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(fmt.Sprintf("failed to open DLQ file: %v", err))
 	}
 	defer file.Close()
+	for {
+		select {
+		case <-ctx.Done():
+			return
 
-	defer s.WG.Done()
+		case deadJob := <-s.JM.DLQBuffer:
+			// Convert the struct to a JSON byte array
+			jobBytes, err := json.Marshal(deadJob)
+			if err != nil {
+				fmt.Printf("failed to marshal dead job: %v\n", err)
+				continue
+			}
+			// Append to the file with a newline
+			file.Write(jobBytes)
+			file.WriteString("\n")
 
-	for deadJob := range s.JM.DLQBuffer {
-		// Convert the struct to a JSON byte array
-		jobBytes, err := json.Marshal(deadJob)
-		if err != nil {
-			fmt.Printf("failed to marshal dead job: %v\n", err)
-			continue
+			s.Logger.Warn("Job moved to DLQ", "event_id", deadJob.EventID)
 		}
-		// Append to the file with a newline
-		file.Write(jobBytes)
-		file.WriteString("\n")
-
-		s.Logger.Warn("Job moved to DLQ", "event_id", deadJob.EventID)
 	}
 }
