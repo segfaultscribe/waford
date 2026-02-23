@@ -18,12 +18,13 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
+
 	for _, dest := range Destinations {
 		newJob := Job{
-			uuid.New().String(),
-			body,
-			0,
-			dest,
+			EventID:     uuid.New().String(),
+			Payload:     body,
+			RetryCount:  0,
+			Destination: dest,
 		}
 
 		s.jm.JobBuffer <- newJob

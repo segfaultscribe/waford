@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"log/slog"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -8,21 +10,26 @@ import (
 type JobManager struct {
 	JobBuffer   chan Job
 	RetryBuffer chan Job
+	DLQBuffer   chan Job
 }
 
 type Server struct {
 	Router *chi.Mux
 	jm     *JobManager // The buffer lives here!
+	logger *slog.Logger
 }
 
-func CreateServer(bufferSize int) *Server {
+func CreateServer(bufferSize int, lg *slog.Logger) *Server {
 	jm := &JobManager{
-		make(chan Job, bufferSize),
-		make(chan Job, bufferSize),
+		JobBuffer:   make(chan Job, bufferSize),
+		RetryBuffer: make(chan Job, bufferSize),
+		DLQBuffer:   make(chan Job, bufferSize),
 	}
+
 	s := &Server{
-		chi.NewRouter(),
-		jm,
+		Router: chi.NewRouter(),
+		jm:     jm,
+		logger: lg,
 	}
 
 	s.Router.Use(middleware.Logger)

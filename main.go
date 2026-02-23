@@ -5,27 +5,20 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/segfaultscribe/waford/internal"
 )
 
-type Server struct {
-	Router    *chi.Mux
-	JobBuffer chan internal.Job // The buffer lives here!
-}
-
 func main() {
-	app := internal.CreateServer(100)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	app := internal.CreateServer(100, logger)
+	app.StartWorkers(100, 10, 1)
 
 	srvr := &http.Server{
 		Addr:    ":3000",
 		Handler: app.Router,
 	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
-	slog.SetDefault(logger)
 
 	slog.Info("server starting",
 		"addr", srvr.Addr,

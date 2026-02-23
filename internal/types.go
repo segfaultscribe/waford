@@ -3,8 +3,9 @@ package internal
 import "encoding/json"
 
 type Job struct {
-	EventID     string
-	Payload     json.RawMessage
-	RetryCount  int
-	Destination string
+	EventID     string          `json:"event_id"`
+	Payload     json.RawMessage `json:"payload"`
+	RetryCount  int             `json:"retry_count"`
+	Destination string          `json:"destination"`
+	LastError   string          `json:"last_error,omitempty"`
 }
