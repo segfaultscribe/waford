@@ -6,23 +6,26 @@ import (
 	"os"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/segfaultscribe/waford/internal"
 )
 
+type Server struct {
+	Router    *chi.Mux
+	JobBuffer chan internal.Job // The buffer lives here!
+}
+
 func main() {
-	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
-	})
-	// r.Post("/ingress", internal.handleIngress)
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	app := internal.CreateServer(100)
 
 	srvr := &http.Server{
 		Addr:    ":3000",
-		Handler: r,
+		Handler: app.Router,
 	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	slog.SetDefault(logger)
 
 	slog.Info("server starting",
 		"addr", srvr.Addr,
