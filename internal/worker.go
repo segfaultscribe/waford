@@ -21,11 +21,6 @@ func sendRequest(ctx context.Context, eventId string, url string, body json.RawM
 	if err != nil {
 		return err
 	}
-
-	if err != nil {
-		return err
-	}
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Event-Id", eventId)
 
@@ -71,9 +66,20 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 						return
 					case <-time.After(d):
 						s.JM.RetryBuffer <- j
+						s.Logger.Warn(
+							"[worker] Job moved to retry buffer",
+							"jobId", current.EventID,
+							"retry count", current.RetryCount,
+						)
 					}
 				}(current, delay)
+				continue
 			}
+			s.Logger.Info(
+				"[worker] Fresh Job delivered successfully",
+				"job_id", current.EventID,
+				"destination", current.Destination,
+			)
 		}
 
 	}
@@ -90,6 +96,11 @@ func (s *Server) handleRetries(ctx context.Context) {
 		case current := <-s.JM.RetryBuffer:
 			if current.RetryCount > 3 {
 				s.JM.DLQBuffer <- current
+				s.Logger.Warn(
+					"[worker] Job moved to DLQ Buffer",
+					"jobId", current.EventID,
+					"retry count", current.RetryCount,
+				)
 				continue
 			}
 
@@ -110,10 +121,21 @@ func (s *Server) handleRetries(ctx context.Context) {
 						return
 					case <-time.After(d):
 						s.JM.RetryBuffer <- j
+						s.Logger.Warn(
+							"[worker] Adding job to retry buffer",
+							"jobId", j.EventID,
+							"retry count", j.RetryCount,
+						)
 					}
 				}(current, delay)
-
+				continue
 			}
+			s.Logger.Info(
+				"[worker] Retried Job delivered successfully",
+				"job_id", current.EventID,
+				"destination", current.Destination,
+				"retry count", current.RetryCount,
+			)
 		}
 	}
 
@@ -138,6 +160,7 @@ func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRe
 		s.WG.Add(1)
 		go s.handleFreshJob(appCtx)
 	}
+	s.Logger.Info("[worker] Started fresh job workers", "count:", numFreshWorkers)
 
 	// separate fleet just for retries so they
 	// don't block fresh traffic
@@ -145,6 +168,7 @@ func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRe
 		s.WG.Add(1)
 		go s.handleRetries(appCtx)
 	}
+	s.Logger.Info("[worker] Started retry workers", "count:", numRetryWorkers)
 
 	// DLQ workers: this would be just 1 but it's in a loop because,
 	// I might update the file reading to be mutex Locked  so that multiple writers can safely access it
@@ -153,6 +177,12 @@ func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRe
 		s.WG.Add(1)
 		go s.handleDLQ(appCtx)
 	}
+	s.Logger.Info(
+		"[worker] Started DLQ workers",
+		"count:",
+		numDLQWorkers,
+	)
+	s.Logger.Info("[worker] NOTE: There should be only 1 DLQ worker running due to architectural reasons")
 
-	fmt.Printf("Started %d fresh workers; %d retry workers; %d DLQ workers\n", numFreshWorkers, numRetryWorkers, numDLQWorkers)
+	// fmt.Printf("Started %d fresh workers; %d retry workers; %d DLQ workers\n", numFreshWorkers, numRetryWorkers, numDLQWorkers)
 }

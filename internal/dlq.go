@@ -31,7 +31,11 @@ func (s *Server) handleDLQ(ctx context.Context) {
 			file.Write(jobBytes)
 			file.WriteString("\n")
 
-			s.Logger.Warn("Job moved to DLQ", "event_id", deadJob.EventID)
+			s.Logger.Warn(
+				"[worker] Job moved to persistant DLQ",
+				"event_id", deadJob.EventID,
+				"Last Error", deadJob.LastError,
+			)
 		}
 	}
 }

@@ -30,23 +30,24 @@ func main() {
 		Handler: app.Router,
 	}
 
-	slog.Info("server starting",
+	slog.Info(
+		"[server] server starting",
 		"addr", srvr.Addr,
 		"url", "http://localhost"+srvr.Addr,
 	)
 
 	// Starting the server in a BACKGROUND goroutine
 	go func() {
-		slog.Info("server starting", "addr", srvr.Addr)
+		// slog.Info("server starting", "addr", srvr.Addr)
 		if err := srvr.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("could not start server", "error", err)
+			slog.Error("[server] could not start server", "error", err)
 			os.Exit(1)
 		}
 	}()
 
 	// Block the main thread until the OS signal cancels the context
 	<-appCtx.Done()
-	slog.Info("Shutdown signal received. Commencing graceful shutdown...")
+	slog.Info("[server] Shutdown signal received. Commencing graceful shutdown...")
 
 	// Shutdown the HTTP server so no new webhooks arrive
 	shutdownCtx, cancelHTTP := context.WithTimeout(context.Background(), 5*time.Second)
@@ -57,9 +58,9 @@ func main() {
 	// Because appCtx was canceled, the 'select' loops in the workers will hit
 	// case <-ctx.Done() and exit, eventually calling wg.Done().
 	// so we now handle the panic problem :)
-	slog.Info("Waiting for background workers to finish...")
+	slog.Info("[server] Waiting for background workers to finish...")
 	app.WG.Wait()
 
-	slog.Info("Graceful shutdown complete. Goodnight!")
+	slog.Info("[server] Graceful shutdown complete. Goodnight!")
 
 }

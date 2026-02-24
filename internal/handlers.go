@@ -20,14 +20,16 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, dest := range Destinations {
+		jobId := uuid.New().String()
 		newJob := Job{
-			EventID:     uuid.New().String(),
+			EventID:     jobId,
 			Payload:     body,
 			RetryCount:  0,
 			Destination: dest,
 		}
 
 		s.JM.JobBuffer <- newJob
+		s.Logger.Info("[Job] New Job registered JobId: %v", jobId)
 	}
 
 	w.WriteHeader(http.StatusAccepted)
