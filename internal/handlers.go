@@ -19,17 +19,29 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	incomingEventId := uuid.New().String()
+
 	for _, dest := range Destinations {
-		jobId := uuid.New().String()
+
+		// jobId := uuid.New().String()
 		newJob := Job{
-			EventID:     jobId,
+			EventID:     incomingEventId,
 			Payload:     body,
 			RetryCount:  0,
 			Destination: dest,
 		}
 
-		s.JM.JobBuffer <- newJob
-		s.Logger.Info("[Job] New Job registered JobId:", "jobId", jobId)
+		select {
+		case s.JM.JobBuffer <- newJob:
+		default:
+			// The channel is 100% full. SHED THE LOAD!
+			// instantly reject the request so the client can backoff
+			s.Logger.Warn("System at capacity, shedding load", "event_id", incomingEventId)
+			http.Error(w, "server is at capacity, please retry later", http.StatusTooManyRequests)
+			return
+		}
+
+		s.Logger.Info("[Job] New Job registered JobId:", "jobId", incomingEventId)
 	}
 
 	w.WriteHeader(http.StatusAccepted)

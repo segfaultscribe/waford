@@ -18,12 +18,12 @@ func main() {
 	slog.SetDefault(logger)
 
 	// create the server
-	app := internal.CreateServer(100, logger)
+	app := internal.CreateServer(10000, logger)
 
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 	// start all workers before server goes up
-	app.StartWorkers(appCtx, 100, 10, 1)
+	app.StartWorkers(appCtx, 1000, 200, 1)
 
 	srvr := &http.Server{
 		Addr:    ":3000",
