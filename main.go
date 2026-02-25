@@ -62,5 +62,4 @@ func main() {
 	app.WG.Wait()
 
 	slog.Info("[server] Graceful shutdown complete. Goodnight!")
-
 }

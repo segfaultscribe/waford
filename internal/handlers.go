@@ -29,7 +29,7 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.JM.JobBuffer <- newJob
-		s.Logger.Info("[Job] New Job registered JobId: %v", jobId)
+		s.Logger.Info("[Job] New Job registered JobId:", "jobId", jobId)
 	}
 
 	w.WriteHeader(http.StatusAccepted)

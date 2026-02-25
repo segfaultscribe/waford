@@ -32,3 +32,5 @@ go.work.sum
 # .vscode/
 
 dlq.jsonl
+logs.txt
+payload.json

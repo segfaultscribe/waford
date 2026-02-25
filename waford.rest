@@ -1,0 +1,9 @@
+### Send webhook event
+POST http://localhost:3000/ingress
+Content-Type: application/json
+
+{
+  "event": "user.signup",
+  "user_id": "12345",
+  "plan": "pro"
+}

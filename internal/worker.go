@@ -46,16 +46,27 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 			return
 
 		case current := <-s.JM.JobBuffer:
+			s.Logger.Info(
+				"[worker] Picked up FRESH job",
+				"jobId", current.EventID,
+				"destination", current.Destination,
+			)
 			// create context
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 			//send the request
-			err := sendRequest(ctx, current.EventID, current.Destination, current.Payload)
+			err := sendRequest(ctxReq, current.EventID, current.Destination, current.Payload)
 			cancel()
 
 			if err != nil {
 				current.LastError = err.Error()
 				delay := expBackoff(current.RetryCount)
+				s.Logger.Warn("[worker] FRESH Job failed, scheduling retry",
+					"jobId", current.EventID,
+					"error", err.Error(),
+					"retry_count", current.RetryCount,
+					"delay", delay.String(),
+				)
 
 				go func(j Job, d time.Duration) {
 					select {
@@ -94,6 +105,11 @@ func (s *Server) handleRetries(ctx context.Context) {
 			return
 
 		case current := <-s.JM.RetryBuffer:
+			s.Logger.Info(
+				"[worker] Picked up RETRY job",
+				"jobId", current.EventID,
+				"destination", current.Destination,
+			)
 			if current.RetryCount > 3 {
 				s.JM.DLQBuffer <- current
 				s.Logger.Warn(
@@ -106,14 +122,20 @@ func (s *Server) handleRetries(ctx context.Context) {
 
 			current.RetryCount++
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
-			err := sendRequest(ctx, current.EventID, current.Destination, current.Payload)
+			err := sendRequest(ctxReq, current.EventID, current.Destination, current.Payload)
 			cancel()
 
 			if err != nil {
 				current.LastError = err.Error()
 				delay := expBackoff(current.RetryCount)
+				s.Logger.Warn("[worker] RETRY Job failed, scheduling retry",
+					"jobId", current.EventID,
+					"error", err.Error(),
+					"retry_count", current.RetryCount,
+					"delay", delay.String(),
+				)
 
 				go func(j Job, d time.Duration) {
 					select {

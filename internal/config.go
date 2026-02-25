@@ -3,9 +3,9 @@ package internal
 import "time"
 
 var Destinations = []string{
-	"http://localhost:4000/here",
-	"http://localhost:4000/here",
-	"http://localhost:4000/here",
+	"http://localhost:4000/dest",
+	"http://localhost:4000/dest",
+	"http://localhost:4000/dest",
 }
 
 const (
