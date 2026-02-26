@@ -1,4 +1,7 @@
-# 🚀 waford
+<h1>
+  <img src="https://img.icons8.com/?size=100&id=5lRHx9hqQq5i&format=png&color=000000" width="32" style="vertical-align: middle;" />
+  waford
+</h1>
 
 ![Go Version](https://img.shields.io/badge/Go-1.26.0-00ADD8?style=for-the-badge&logo=go)
 ![Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen?style=for-the-badge)
