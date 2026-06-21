@@ -4,19 +4,18 @@
 </h1>
 
 ![Go Version](https://img.shields.io/badge/Go-1.26.0-00ADD8?style=for-the-badge&logo=go)
-![Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen?style=for-the-badge)
 
-**waford** is a zero-dependency, high-throughput webhook fan-out service written in Go. 
+**waford** is a high-throughput webhook fan-out service written in Go. 
 
 It securely receives a single incoming webhook payload and asynchronously distributes it to multiple downstream destinations while natively handling partial failures, system backpressure, and graceful degradation.
 
-## ⚡ Why waford?
+## Why waford?
 
 This is an internal micro tool designed to solve a specific problem where most webhooks only allow a single endpoint registration. Sometimes you might want to send this webhook event to multiple endpoints, services, apps, users or whatever it is. `waford` allows you to fan out and send a single webhook across multiple destination proposing a neat asynchronous solution.  
 
 📖 **[Read the full architectural deep-dive and build journey here!](https://lennzer.vercel.app/posts/waford_h)**
 
-## ✨ Core Features
+## Features
 
 * **Micro-Job Fan-Out:** Ingress payloads are instantly split into isolated micro-jobs, ensuring that a slow destination never blocks the delivery of a healthy destination.
 * **Exponential Backoff with Full Jitter:** Protects recovering downstream servers from "Thundering Herd" DDoS attacks by mathematically desynchronizing retry attempts.
@@ -24,7 +23,7 @@ This is an internal micro tool designed to solve a specific problem where most w
 * **Load Shedding & Backpressure:** Protects its own memory. When internal queues reach capacity, `waford` shifts from blocking connections to instantly shedding load with `HTTP 429 Too Many Requests`.
 * **Graceful Context Shutdowns:** Uses `select` statements and `context.Context` to ensure background workers cleanly abort sleeping timers and flush buffers to disk on `SIGTERM`, guaranteeing zero panics and no lost data.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 * Go 1.26 or higher
@@ -45,9 +44,9 @@ go mod tidy
 go run main.go
 ```
 
-### 💻 Usage
+### Usage
 
-**waford** exposes a single, lightning-fast ingress endpoint. It accepts your payload, drops it into the internal channel buffers, and instantly returns a 202 Accepted to free up the client.
+**waford** exposes a single ingress endpoint. It accepts your payload, drops it into the internal channel buffers, and instantly returns a 202 Accepted (or other) to free up the client.
 
 Send a Webhook:
 ```bash
@@ -65,7 +64,7 @@ curl -X POST http://localhost:3000/ingress `
 --data-binary "@payload.json"
 ```
 
-## 📊 Benchmarks
+## Benchmarks
 
 **waford** is built to maximize the underlying OS's TCP limits. In local stress tests using hey, waford dynamically balanced background fan-out processing with active load shedding.
 
