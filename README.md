@@ -52,7 +52,7 @@ Send a Webhook:
 ```bash
 curl -X POST http://localhost:3000/ingress \
      -H "Content-Type: application/json" \
-     -d '{"event": "user.signup", "user_id": "12345" "plan": "pr
+     -d '{"event": "user.signup", "user_id": "12345", "plan": "pr
 ```
 you can see the logs appear on your console.
 
@@ -100,4 +100,4 @@ Maintained an average ingress latency of 0.12 seconds under extreme duress.
 ~4k RPS
 ```
 
-**NOTE:** Testing on a proper linux server is pending. The above tests were run on a windows system.
+**NOTE:** Testing on a proper linux server is pending. The above tests were run on a Windows system.
