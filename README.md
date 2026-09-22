@@ -13,7 +13,7 @@ It securely receives a single incoming webhook payload and asynchronously distri
 
 This is an internal micro tool designed to solve a specific problem where most webhooks only allow a single endpoint registration. Sometimes you might want to send this webhook event to multiple endpoints, services, apps, users or whatever it is. `waford` allows you to fan out and send a single webhook across multiple destination proposing a neat asynchronous solution.  
 
-📖 **[Read the full architectural deep-dive and build journey here!](https://lennzer.vercel.app/posts/waford_h)**
+📖 **[Read the full architectural deep-dive and build journey here!](https://lennzer.dev/writings/waford)**
 
 ## Features
 
