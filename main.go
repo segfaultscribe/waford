@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/segfaultscribe/waford/internal"
+	"github.com/segfaultscribe/waford/internal/db"
 )
 
 func main() {
@@ -17,8 +18,14 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	database, err := db.InitDB("webhook_distributor.db")
+	if err != nil {
+		slog.Error("Initialization error: %v", err)
+	}
+	defer database.Close()
+
 	// create the server
-	app := internal.CreateServer(10000, logger)
+	app := internal.CreateServer(10000, logger, database)
 
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
@@ -57,7 +64,7 @@ func main() {
 	// Wait for the workers to finish their current requests
 	// Because appCtx was canceled, the 'select' loops in the workers will hit
 	// case <-ctx.Done() and exit, eventually calling wg.Done().
-	// so we now handle the panic problem :)
+	// we now handle the panic problem
 	slog.Info("[server] Waiting for background workers to finish...")
 	app.WG.Wait()
 

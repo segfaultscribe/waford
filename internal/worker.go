@@ -54,7 +54,7 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 			// create context
 			ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
-			//send the request
+			// send the request
 			err := sendRequest(ctxReq, current.EventID, current.Destination, current.Payload)
 			cancel()
 
@@ -92,7 +92,6 @@ func (s *Server) handleFreshJob(ctx context.Context) {
 				"destination", current.Destination,
 			)
 		}
-
 	}
 }
 
@@ -160,7 +159,6 @@ func (s *Server) handleRetries(ctx context.Context) {
 			)
 		}
 	}
-
 }
 
 func expBackoff(count int) time.Duration {
@@ -171,7 +169,7 @@ func expBackoff(count int) time.Duration {
 	if backoff > float64(MaxDelay) {
 		backoff = float64(MaxDelay)
 	}
-	// apply full jitter
+	// full jitter
 	jitteredBackoff := backoff * rand.Float64()
 	return time.Duration(jitteredBackoff)
 }
@@ -193,7 +191,7 @@ func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRe
 	s.Logger.Info("[worker] Started retry workers", "count:", numRetryWorkers)
 
 	// DLQ workers: this would be just 1 but it's in a loop because,
-	// I might update the file reading to be mutex Locked  so that multiple writers can safely access it
+	// could update the file reading to be mutex Locked  so that multiple writers can safely access it
 	// right now, as you might have guessed that's not the case.
 	for i := 0; i < numDLQWorkers; i++ {
 		s.WG.Add(1)
