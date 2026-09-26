@@ -9,3 +9,8 @@ type Job struct {
 	Destination string          `json:"destination"`
 	LastError   string          `json:"last_error,omitempty"`
 }
+
+type Distributor struct {
+	Name         string   `json:"name"`
+	Destinations []string `json:"destinations"`
+}

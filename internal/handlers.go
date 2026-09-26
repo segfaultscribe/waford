@@ -46,3 +46,23 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 }
+
+func (s *Server) createDistributorHandler(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+
+	if !json.Valid(body) || err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	var distributor Distributor
+
+	err = json.NewDecoder(r.Body).Decode(&distributor)
+	if err != nil {
+		http.Error(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+}
