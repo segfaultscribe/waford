@@ -1,9 +1,12 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -47,22 +50,82 @@ func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+type handlers struct {
+	store Store
+}
+
+func NewHandlers(store Store) *handlers {
+	return &handlers{store: store}
+}
+
 func (s *Server) createDistributorHandler(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	defer r.Body.Close()
+	distributor := &Distributor{}
 
-	body, err := io.ReadAll(r.Body)
-
-	if !json.Valid(body) || err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := distributor.decodeJSON(r, 1<<20); err != nil {
+		http.Error(w, "Invalid request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	var distributor Distributor
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-	err = json.NewDecoder(r.Body).Decode(&distributor)
+	id, err := s.Store.SaveDistributor(ctx, distributor.Name)
 	if err != nil {
-		http.Error(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		s.Logger.Error("[Distributor] Failed to save distributor", "error", err, "name", distributor.Name)
+		http.Error(w, "Failed to save distributor", http.StatusInternalServerError)
 		return
+	}
+	s.Logger.Info("[Distributor] New Distributor registered", "name", distributor.Name, "id", id)
+
+	if err := s.Store.SaveDestinations(ctx, id, distributor.Destinations); err != nil {
+		s.Logger.Error("[Distributor] Failed to save destinations", "error", err, "name", distributor.Name)
+		http.Error(w, "Failed to save destinations", http.StatusInternalServerError)
+		return
+	}
+	s.Logger.Info("[Distributor] New Destinations registered", "name", distributor.Name, "count", len(distributor.Destinations))
+
+	s.writeJSON(w, http.StatusCreated, map[string]any{
+		"message":        "Distributor registered successfully",
+		"distributor_id": id,
+		"webhook_url":    fmt.Sprintf("https://waford.com/waford/%s/events", id),
+	})
+}
+
+func (s *Server) handleRegisterEvent(w http.ResponseWriter, r *http.Request) {
+	distributorID := r.PathValue("distributorID")
+
+	if distributorID == "" {
+		http.Error(w, "Missing distributor ID", http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	defer r.Body.Close()
+
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	id, err := s.Store.SaveEvent(r.Context(), distributorID, payload)
+	if err != nil {
+		s.Logger.Error("[Event] Failed to save event", "error", err, "distributorID", distributorID)
+		http.Error(w, "Failed to save event", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, http.StatusAccepted, map[string]any{
+		"message": "Event Created",
+		"eventID": id,
+	})
+}
+
+func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		s.Logger.Error("Failed to encode JSON response", "error", err)
 	}
 }

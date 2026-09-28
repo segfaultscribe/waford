@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pressly/goose/v3"
 	"github.com/segfaultscribe/waford/internal"
 	"github.com/segfaultscribe/waford/internal/db"
 )
@@ -18,14 +20,24 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	database, err := db.InitDB("webhook_distributor.db")
+	database, err := db.InitDB("waford_001.db")
 	if err != nil {
 		slog.Error("Initialization error: %v", err)
 	}
 	defer database.Close()
 
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		log.Fatalf("Failed to set goose dialect: %v", err)
+	}
+
+	if err := goose.Up(database, "./internal/db/migrations"); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+	logger.Info("Database migrations applied successfully")
+
+	store := internal.NewStore(database)
 	// create the server
-	app := internal.CreateServer(10000, logger, database)
+	app := internal.CreateServer(10000, logger, store)
 
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()

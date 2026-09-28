@@ -19,9 +19,10 @@ type Server struct {
 	JM     *JobManager // The buffer lives here!
 	Logger *slog.Logger
 	WG     *sync.WaitGroup
+	Store  *Store
 }
 
-func CreateServer(bufferSize int, lg *slog.Logger) *Server {
+func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
 	jm := &JobManager{
 		JobBuffer:   make(chan Job, bufferSize),
 		RetryBuffer: make(chan Job, bufferSize),
@@ -33,6 +34,7 @@ func CreateServer(bufferSize int, lg *slog.Logger) *Server {
 		JM:     jm,
 		Logger: lg,
 		WG:     &sync.WaitGroup{},
+		Store:  store,
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -42,4 +44,6 @@ func CreateServer(bufferSize int, lg *slog.Logger) *Server {
 
 func (s *Server) routes() {
 	s.Router.Post("/ingress", s.handleIngress)
+	s.Router.Post("/distributors", s.createDistributorHandler)
+	s.Router.Post("/distributors/{distributorID}/events", s.handleRegisterEvent)
 }
