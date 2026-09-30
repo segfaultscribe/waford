@@ -206,3 +206,45 @@ func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRe
 
 	// fmt.Printf("Started %d fresh workers; %d retry workers; %d DLQ workers\n", numFreshWorkers, numRetryWorkers, numDLQWorkers)
 }
+
+func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	s.Logger.Info("[Chronos] Worker Online", "interval", pollInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.Logger.Info("[Chronos] Worker shutting down")
+			return
+		case <-ticker.C:
+			s.Logger.Info("[Chronos] Polling events")
+			s.FillDeliveries(ctx)
+			continue
+		case <-s.JM.JobBuffer:
+			s.Logger.Info("[Chornos] New event signal received, Polling events")
+			s.FillDeliveries(ctx)
+			continue
+		}
+	}
+}
+
+func (s *Server) FillDeliveries(ctx context.Context) {
+	events, err := s.Store.GetUnregisteredEvents(ctx)
+	if err != nil {
+		s.Logger.Error("[chronos] Failed to fetch unfanned out events", "error", err)
+		return
+	}
+
+	if len(events) == 0 {
+		s.Logger.Info("[chronos] Found no fresh events to process")
+		return
+	}
+
+	err = s.Store.SaveDeliveries(ctx, events)
+	if err != nil {
+		s.Logger.Error("[chronos] Failed to save deliveries", "error", err)
+		return
+	}
+}

@@ -90,7 +90,7 @@ func (s *Store) GetUnregisteredEvents(ctx context.Context) ([]Event, error) {
 	return events, nil
 }
 
-func (s *Store) AddDeliveries(ctx context.Context, event []Event) error {
+func (s *Store) SaveDeliveries(ctx context.Context, event []Event) error {
 	if len(event) == 0 {
 		return nil
 	}
@@ -124,7 +124,6 @@ func (s *Store) AddDeliveries(ctx context.Context, event []Event) error {
 		return err
 	}
 
-	// Mark events as fanned out
 	for eventID := range eventIDsToUpdate {
 		if _, err := tx.ExecContext(ctx, `UPDATE events SET fanned_out = 1 WHERE id = ?`, eventID); err != nil {
 			return err
