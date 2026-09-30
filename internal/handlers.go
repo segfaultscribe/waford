@@ -114,6 +114,11 @@ func (s *Server) handleRegisterEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save event", http.StatusInternalServerError)
 		return
 	}
+	// send a signal to wake up chronos
+	select {
+	case s.JM.ChronosSignal <- struct{}{}:
+	default:
+	}
 
 	s.writeJSON(w, http.StatusAccepted, map[string]any{
 		"message": "Event Created",

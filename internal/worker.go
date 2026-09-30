@@ -222,7 +222,7 @@ func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
 			s.Logger.Info("[Chronos] Polling events")
 			s.FillDeliveries(ctx)
 			continue
-		case <-s.JM.JobBuffer:
+		case <-s.JM.ChronosSignal:
 			s.Logger.Info("[Chornos] New event signal received, Polling events")
 			s.FillDeliveries(ctx)
 			continue
@@ -242,9 +242,19 @@ func (s *Server) FillDeliveries(ctx context.Context) {
 		return
 	}
 
-	err = s.Store.SaveDeliveries(ctx, events)
+	c, err := s.Store.SaveDeliveries(ctx, events)
 	if err != nil {
 		s.Logger.Error("[chronos] Failed to save deliveries", "error", err)
 		return
 	}
+
+	s.Logger.Info("[Chronos] Deliveries succesfully added!", "count", c)
+}
+
+func (s *Server) StartChronos(appCtx context.Context, pollInterval time.Duration) {
+	s.Logger.Info("[worker] Starting Chronos")
+	go s.Chronos(appCtx, pollInterval)
+}
+
+func (s *Server) Hermes(ctx context.Context) {
 }

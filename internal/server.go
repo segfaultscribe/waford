@@ -9,9 +9,10 @@ import (
 )
 
 type JobManager struct {
-	JobBuffer   chan Job
-	RetryBuffer chan Job
-	DLQBuffer   chan Job
+	JobBuffer     chan Job
+	RetryBuffer   chan Job
+	DLQBuffer     chan Job
+	ChronosSignal chan struct{}
 }
 
 type Server struct {
@@ -24,9 +25,10 @@ type Server struct {
 
 func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
 	jm := &JobManager{
-		JobBuffer:   make(chan Job, bufferSize),
-		RetryBuffer: make(chan Job, bufferSize),
-		DLQBuffer:   make(chan Job, bufferSize),
+		JobBuffer:     make(chan Job, bufferSize),
+		RetryBuffer:   make(chan Job, bufferSize),
+		DLQBuffer:     make(chan Job, bufferSize),
+		ChronosSignal: make(chan struct{}),
 	}
 
 	s := &Server{

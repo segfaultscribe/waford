@@ -79,7 +79,7 @@ func (s *Store) GetUnregisteredEvents(ctx context.Context) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.DistributorID, &e.FannedOut, &e.Payload, &e.URL); err != nil {
+		if err := rows.Scan(&e.ID, &e.DistributorID, &e.Payload, &e.URL); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
@@ -90,17 +90,17 @@ func (s *Store) GetUnregisteredEvents(ctx context.Context) ([]Event, error) {
 	return events, nil
 }
 
-func (s *Store) SaveDeliveries(ctx context.Context, event []Event) error {
-	if len(event) == 0 {
-		return nil
+func (s *Store) SaveDeliveries(ctx context.Context, events []Event) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
 	}
 
 	// Build the dynamic batch insert query
-	valueStrings := make([]string, 0, len(event))
-	valueArgs := make([]any, 0, len(event)*5)
+	valueStrings := make([]string, 0, len(events))
+	valueArgs := make([]any, 0, len(events)*5)
 	eventIDsToUpdate := make(map[string]bool)
-
-	for _, item := range event {
+	c := len(events)
+	for _, item := range events {
 		deliveryID := s.idg.New().String()
 		valueStrings = append(valueStrings, "(?, ?, ?, ?, ?)")
 		valueArgs = append(valueArgs, deliveryID, item.ID, item.DistributorID, item.URL, "pending")
@@ -115,20 +115,56 @@ func (s *Store) SaveDeliveries(ctx context.Context, event []Event) error {
 	// transaction start
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	// Insert into deliveries
 	if _, err := tx.ExecContext(ctx, batchQuery, valueArgs...); err != nil {
-		return err
+		return 0, err
 	}
 
 	for eventID := range eventIDsToUpdate {
 		if _, err := tx.ExecContext(ctx, `UPDATE events SET fanned_out = 1 WHERE id = ?`, eventID); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	return tx.Commit()
+	return c, tx.Commit()
 }
+
+// func (s *Store) JobFinder(ctx context.Context) error {
+// 	query := `
+// 			SELECT
+// 				d.id,
+// 				d.url,
+// 				e.payload,
+// 				d.status,
+// 				d.retry_count
+// 			FROM (
+// 				(
+// 					SELECT id, event_id, url, status, retry_count, created_at
+// 					FROM deliveries
+// 					WHERE status = 'pending'
+// 					ORDER BY created_at ASC
+// 					LIMIT 40
+// 				)
+// 				UNION ALL
+// 				(
+// 					SELECT id, event_id, url, status, retry_count, created_at
+// 					FROM deliveries
+// 					WHERE status = 'retry' AND next_retry_at <= CURRENT_TIMESTAMP
+// 					ORDER BY created_at ASC
+// 					LIMIT 10
+// 				)
+// 			) d
+// 			JOIN events e ON d.event_id = e.id
+// 			ORDER BY d.created_at ASC;
+// 		`
+
+// 	rows, err := s.db.QueryContext(ctx, query)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	defer rows.Close()
+// }

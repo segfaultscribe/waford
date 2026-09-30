@@ -43,6 +43,7 @@ func main() {
 	defer stopApp()
 	// start all workers before server goes up
 	app.StartWorkers(appCtx, 1000, 200, 1)
+	app.StartChronos(appCtx, 10*time.Second)
 
 	srvr := &http.Server{
 		Addr:    ":3000",

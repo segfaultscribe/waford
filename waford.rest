@@ -5,7 +5,16 @@ Content-Type: application/json
 {
   "name": "Acme Corp",
   "destinations": [
-    "https://example.com/webhook1",
-    "https://example.com/webhook2"
+    "http://localhost:4000",
+    "http://localhost:4000"
   ]
+}
+
+
+### Add new event
+POST http://localhost:3000/distributors/01M3SH13XJBZ0PQG518YEJAYZP/events
+Content-Type: application/json
+
+{
+  "name": "This da job!"
 }
