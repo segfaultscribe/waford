@@ -26,6 +26,15 @@ func main() {
 	}
 	defer database.Close()
 
+	var version string
+	// Query the underlying SQLite C-library version string
+	err = database.QueryRow("SELECT sqlite_version();").Scan(&version)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	slog.Info("Underlying SQLite version: ", "version", version)
+
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		log.Fatalf("Failed to set goose dialect: %v", err)
 	}
@@ -35,7 +44,7 @@ func main() {
 	}
 	logger.Info("Database migrations applied successfully")
 
-	store := internal.NewStore(database)
+	store := internal.NewStore(database, logger)
 	// create the server
 	app := internal.CreateServer(10000, logger, store)
 
@@ -44,6 +53,7 @@ func main() {
 	// start all workers before server goes up
 	app.StartWorkers(appCtx, 1000, 200, 1)
 	app.StartChronos(appCtx, 10*time.Second)
+	app.StartHermes(appCtx, 10)
 
 	srvr := &http.Server{
 		Addr:    ":3000",

@@ -28,10 +28,28 @@ func (d *Distributor) decodeJSON(r *http.Request, maxBytes int64) error {
 }
 
 type Event struct {
-	ID            string    `db:"id"`
-	DistributorID string    `db:"distributor_id"`
-	Payload       string    `db:"payload"` // Or []byte if you prefer
-	CreatedAt     time.Time `db:"created_at"`
-	FannedOut     bool      `db:"fanned_out"`
-	URL           string    `db:"url"` // The destination URL for the event
+	ID            string `db:"id"`
+	Payload       []byte `db:"payload"`
+	DestinationID string `db:"destination_id"`
+}
+
+type Delivery struct {
+	ID         string `db:"id"`
+	Url        string `db:"url"`
+	Payload    []byte `db:"payload"`
+	retryCount int    `db:"retry_count"`
+}
+
+type DeliverResult struct {
+	ID         string
+	Success    bool
+	Err        error
+	RetryCount int
+}
+
+type DeliveryBatchData struct {
+	ID          string
+	Success     bool
+	ErrMessage  string
+	BackoffTime time.Time
 }

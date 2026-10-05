@@ -5,14 +5,14 @@ Content-Type: application/json
 {
   "name": "Acme Corp",
   "destinations": [
-    "http://localhost:4000",
-    "http://localhost:4000"
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest"
   ]
 }
 
 
 ### Add new event
-POST http://localhost:3000/distributors/01M3SH13XJBZ0PQG518YEJAYZP/events
+POST http://localhost:3000/distributors/01M450B7Q947GF68SF9WKPXM8P/events
 Content-Type: application/json
 
 {
