@@ -13,6 +13,7 @@ type JobManager struct {
 	RetryBuffer   chan Job
 	DLQBuffer     chan Job
 	ChronosSignal chan struct{}
+	HermesSignal  chan struct{}
 }
 
 type Server struct {
@@ -29,6 +30,7 @@ func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
 		RetryBuffer:   make(chan Job, bufferSize),
 		DLQBuffer:     make(chan Job, bufferSize),
 		ChronosSignal: make(chan struct{}),
+		HermesSignal:  make(chan struct{}),
 	}
 
 	s := &Server{

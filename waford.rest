@@ -3,8 +3,34 @@ POST http://localhost:3000/distributors
 Content-Type: application/json
 
 {
-  "name": "Acme Corp",
+  "name": "Acme no new Corp",
   "destinations": [
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
+    "http://localhost:4000/dest",
     "http://localhost:4000/dest",
     "http://localhost:4000/dest"
   ]
@@ -12,7 +38,7 @@ Content-Type: application/json
 
 
 ### Add new event
-POST http://localhost:3000/distributors/01M450B7Q947GF68SF9WKPXM8P/events
+POST http://localhost:3000/distributors/01M466KSA4RPZHNPT64DQJN1A0/events
 Content-Type: application/json
 
 {
