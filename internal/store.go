@@ -109,7 +109,7 @@ func (s *Store) SaveDeliveries(ctx context.Context, events []Event) (int, error)
 	for _, item := range events {
 		deliveryID := s.idg.New().String()
 		valueStrings = append(valueStrings, "(?, ?, ?, ?)")
-		valueArgs = append(valueArgs, deliveryID, item.ID, item.DestinationID, "pending")
+		valueArgs = append(valueArgs, deliveryID, item.ID, item.DestinationID, StatusPending)
 		eventIDsToUpdate[item.ID] = struct{}{}
 	}
 
@@ -170,171 +170,93 @@ func (s *Store) SaveDeliveries(ctx context.Context, events []Event) (int, error)
 	return int(insertedRows), nil
 }
 
-// func (s *Store) JobFinder(ctx context.Context) ([]Delivery, error) {
-// 	query := `
-// 		WITH claimed AS (
-// 			UPDATE deliveries
-// 			SET status = 'processing',
-// 			    updated_at = CURRENT_TIMESTAMP
-// 			WHERE id IN (
-// 				SELECT id FROM (
-// 					SELECT id FROM deliveries
-// 					WHERE status = 'pending' AND retry_count < 3
-// 					ORDER BY created_at ASC
-// 					LIMIT 40
-// 				)
-// 				UNION ALL
-// 				SELECT id FROM (
-// 					SELECT id FROM deliveries
-// 					WHERE status = 'retry'
-// 					  AND retry_count < 3
-// 					  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-// 					ORDER BY created_at ASC
-// 					LIMIT 10
-// 				)
-// 			)
-// 			RETURNING id, event_id, destination_id, retry_count, created_at
-// 		)
-// 		SELECT
-// 			c.id,
-// 			dest.url,
-// 			c.retry_count,
-// 			e.payload
-// 		FROM claimed c
-// 		JOIN events e ON c.event_id = e.id
-// 		JOIN destinations dest ON c.destination_id = dest.id
-// 		ORDER BY c.created_at ASC;
-// 	`
-// 	rows, err := s.db.QueryContext(ctx, query)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	var deliveries []Delivery
-// 	for rows.Next() {
-// 		var d Delivery
-// 		if err := rows.Scan(&d.ID, &d.Url, &d.retryCount, &d.Payload); err != nil {
-// 			return nil, err
-// 		}
-// 		deliveries = append(deliveries, d)
-// 	}
-
-// 	return deliveries, nil
-// }
-
 func (s *Store) ExecuteQuery(ctx context.Context, query string, args ...any) error {
 	_, err := s.db.ExecContext(ctx, query, args...)
 	return err
 }
 
-// BuildBatchUpdateQuery constructs a dynamic, parameterized SQL query to update a batch of delivery outcomes
-// (both successful and failed) in a single SQLite statement using CASE expressions.
-//
-// This approach minimizes I/O overhead by executing a single batch UPDATE query per worker batch instead
-// of issuing individual UPDATE statements inside a transaction loop.
-//
-// State Changes Handled per Delivery:
-//   - Success: Sets status to 'success', clears next_retry_at, dead_at, and last_error.
-//   - Failure (< MaxRetries): Increments retry_count, sets status to 'retry', calculates next_retry_at backoff,
-//     and logs last_error.
-//   - Failure (>= MaxRetries): Sets status to 'dlq', marks dead_at timestamp, clears next_retry_at backoff,
-//     and logs last_error.
-//   - Universal: Always sets updated_at to CURRENT_TIMESTAMP across all processed rows in the batch.
-func (s *Store) BuildBatchUpdateQuery(results []DeliveryBatchData) (string, []any) {
-	const MaxRetries = 3
-
-	if len(results) == 0 {
-		return "", nil
+func (s *Store) BatchUpdateDeliveries(ctx context.Context, batch []DeliveryBatchData, MaxRetries int) (int64, error) {
+	if len(batch) == 0 {
+		return 0, nil
 	}
 
-	// Pre-allocate slice capacity to prevent dynamic re-allocations during argument collection.
-	// Average arguments per result: ~8 parameters across CASE conditions + 1 for WHERE IN clause.
-	args := make([]any, 0, len(results)*9)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
 
-	var statusCase strings.Builder
-	var retryCase strings.Builder
-	var nextRetryCase strings.Builder
-	var deadAtCase strings.Builder
-	var lastErrorCase strings.Builder
-	var inClause strings.Builder
+	stmt, err := tx.PrepareContext(ctx, `
+		UPDATE deliveries 
+		SET status = ?,
+		    retry_count = ?,
+		    next_retry_at = ?,
+		    dead_at = ?,
+		    last_error = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare stmt: %w", err)
+	}
+	defer stmt.Close()
 
-	statusCase.WriteString("status = CASE id ")
-	retryCase.WriteString("retry_count = CASE id ")
-	nextRetryCase.WriteString("next_retry_at = CASE id ")
-	deadAtCase.WriteString("dead_at = CASE id ")
-	lastErrorCase.WriteString("last_error = CASE id ")
-	inClause.WriteString("WHERE id IN (")
+	now := time.Now().UTC()
+	var totalRowsAffected int64
 
-	for i, res := range results {
-		if i > 0 {
-			inClause.WriteString(", ")
-		}
+	for i := range batch {
+		item := &batch[i]
 
-		if res.Success {
-			// SUCCESS PATH: Transition delivery to 'success' state and clear transient error tracking columns.
-			statusCase.WriteString("WHEN ? THEN 'success' ")
-			args = append(args, res.ID)
+		var (
+			status        string
+			nextRetryAt   string
+			deadAt        *time.Time
+			errStr        *string
+			newRetryCount = item.RetryCount
+		)
 
-			nextRetryCase.WriteString("WHEN ? THEN NULL ")
-			args = append(args, res.ID)
-
-			deadAtCase.WriteString("WHEN ? THEN NULL ")
-			args = append(args, res.ID)
-
-			lastErrorCase.WriteString("WHEN ? THEN NULL ")
-			args = append(args, res.ID)
+		if item.Success {
+			status = StatusDelivered
 		} else {
-			// FAILURE PATH: Evaluate current retry threshold against MaxRetries.
-			// If (retry_count + 1 >= MaxRetries), route job to Dead Letter Queue ('dlq'); otherwise mark 'retry'.
-			statusCase.WriteString(fmt.Sprintf("WHEN ? THEN CASE WHEN retry_count + 1 >= %d THEN 'dlq' ELSE 'retry' END ", MaxRetries))
-			args = append(args, res.ID)
+			if item.ErrMessage != "" {
+				errStr = &item.ErrMessage
+			}
 
-			// Increment failure count monotonically.
-			retryCase.WriteString("WHEN ? THEN retry_count + 1 ")
-			args = append(args, res.ID)
-
-			// Calculate next execution timestamp if eligible for retry; clear schedule if terminal failure.
-			nextRetryCase.WriteString("WHEN ? THEN CASE WHEN retry_count + 1 >= ? THEN NULL ELSE ? END ")
-			args = append(args, res.ID, MaxRetries, res.BackoffTime)
-
-			// Mark dead_at timestamp upon moving to DLQ state for auditability.
-			deadAtCase.WriteString("WHEN ? THEN CASE WHEN retry_count + 1 >= ? THEN CURRENT_TIMESTAMP ELSE NULL END ")
-			args = append(args, res.ID, MaxRetries)
-
-			// Capture error message returned by Hermes transport worker.
-			lastErrorCase.WriteString("WHEN ? THEN ? ")
-			args = append(args, res.ID, res.ErrMessage)
+			if item.RetryCount < MaxRetries {
+				status = StatusRetry
+				newRetryCount = item.RetryCount + 1
+				nextRetryAt = item.BackoffTime.UTC().Format("2006-01-02 15:04:05")
+			} else {
+				status = StatusDLQ
+				deadAt = &now
+			}
 		}
 
-		inClause.WriteString("?")
+		res, err := stmt.ExecContext(ctx,
+			status,
+			newRetryCount,
+			nextRetryAt,
+			deadAt,
+			errStr,
+			item.ID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("exec update for delivery %s: %w", item.ID, err)
+		}
+
+		// Read rows affected for this iteration (0 overhead)
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("get rows affected for %s: %w", item.ID, err)
+		}
+		totalRowsAffected += n
 	}
 
-	// Finalize conditional CASE clauses with appropriate fallbacks for unhandled cases.
-	statusCase.WriteString("END")
-	retryCase.WriteString("ELSE retry_count END")
-	nextRetryCase.WriteString("END")
-	deadAtCase.WriteString("END")
-	lastErrorCase.WriteString("END")
-	inClause.WriteString(")")
-
-	// Bind target primary keys to populate the terminal 'WHERE id IN (?, ...)' predicate filter.
-	for _, res := range results {
-		args = append(args, res.ID)
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
 	}
 
-	// Assemble final parameterized SQL statement including mandatory updated_at touch.
-	query := fmt.Sprintf(
-		"UPDATE deliveries SET %s, %s, %s, %s, %s, updated_at = CURRENT_TIMESTAMP %s;",
-		statusCase.String(),
-		retryCase.String(),
-		nextRetryCase.String(),
-		deadAtCase.String(),
-		lastErrorCase.String(),
-		inClause.String(),
-	)
-
-	return query, args
+	return totalRowsAffected, nil
 }
 
 func (s *Store) RecoverStaleJobs(ctx context.Context, timeout time.Duration) (int64, error) {
@@ -355,66 +277,6 @@ func (s *Store) RecoverStaleJobs(ctx context.Context, timeout time.Duration) (in
 	return res.RowsAffected()
 }
 
-// reference
-
-// // 1. Start the transaction via Go's driver
-// tx, err := db.Begin()
-// if err != nil {
-//     return err
-// }
-// // Automatically rollback if anything fails before tx.Commit()
-// defer tx.Rollback()
-
-// // 2. Step 1: Create the temporary table
-// _, err = tx.Exec(`
-//     CREATE TEMP TABLE ids_to_claim AS
-//     SELECT id FROM (
-//         SELECT id FROM deliveries
-//         WHERE status = 'pending' AND retry_count < 3
-//         ORDER BY created_at ASC LIMIT 40
-//     )
-//     UNION ALL
-//     SELECT id FROM (
-//         SELECT id FROM deliveries
-//         WHERE status = 'retry'
-//           AND retry_count < 3
-//           AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-//         ORDER BY created_at ASC LIMIT 10
-//     );
-// `)
-// if err != nil {
-//     return err
-// }
-
-// // 3. Step 2: Update the statuses
-// _, err = tx.Exec(`
-//     UPDATE deliveries
-//     SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-//     WHERE id IN (SELECT id FROM ids_to_claim);
-// `)
-// if err != nil {
-//     return err
-// }
-
-// // 4. Step 3: Query the final payloads
-// rows, err := tx.Query(`
-//     SELECT d.id, dest.url, d.retry_count, e.payload
-//     FROM ids_to_claim tmp
-//     JOIN deliveries d ON tmp.id = d.id
-//     JOIN events e ON d.event_id = e.id
-//     JOIN destinations dest ON d.destination_id = dest.id
-//     ORDER BY d.created_at ASC;
-// `)
-// if err != nil {
-//     return err
-// }
-// defer rows.Close()
-
-// // ... Scan your rows here ...
-
-// // 5. Commit the transaction
-// return tx.Commit()
-
 func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLimit int) ([]Delivery, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -430,7 +292,7 @@ func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLi
 	getIdsQuery := `
 			SELECT id FROM (
 			SELECT id FROM deliveries
-			WHERE status = 'pending' AND retry_count < ?
+			WHERE status = 'pending'
 			ORDER BY created_at ASC
 			LIMIT ?
 		)
@@ -440,7 +302,7 @@ func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLi
 		SELECT id FROM (
 			SELECT id FROM deliveries
 			WHERE status = 'retry'
-			AND retry_count < ?
+			AND retry_count <= ?
 			AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
 			ORDER BY created_at ASC
 			LIMIT ?

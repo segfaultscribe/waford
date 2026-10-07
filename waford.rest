@@ -38,7 +38,7 @@ Content-Type: application/json
 
 
 ### Add new event
-POST http://localhost:3000/distributors/01M466KSA4RPZHNPT64DQJN1A0/events
+POST http://localhost:3000/distributors/01M4922P1QQVKJ44R42H93TAM7/events
 Content-Type: application/json
 
 {

@@ -298,6 +298,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 			wg.Go(func() {
 				var dr DeliverResult
 				dr.ID = delivery.ID
+				dr.RetryCount = delivery.retryCount
 
 				defer func() { results <- dr }()
 
@@ -324,7 +325,6 @@ func (s *Server) Hermes(ctx context.Context) error {
 				dr.Success = true
 				dr.Err = nil
 				dr.ID = delivery.ID
-				dr.RetryCount = delivery.retryCount
 				s.Logger.Info("Delivery Succes", "id", dr.ID)
 			})
 		}
@@ -342,22 +342,19 @@ func (s *Server) Hermes(ctx context.Context) error {
 				bd.ErrMessage = res.Err.Error()
 			}
 
-			nextRetryAt := expBackoff(res.RetryCount)
+			nextRetryAt := expBackoff(res.RetryCount + 1)
+			bd.RetryCount = res.RetryCount
 
 			bd.BackoffTime = time.Now().UTC().Add(nextRetryAt)
 			batchData = append(batchData, bd)
 		}
 
-		query, args := s.Store.BuildBatchUpdateQuery(batchData)
-		if query == "" {
-			s.Logger.Warn("[hermes] BuildBatchUpdateQuery returned empty query, skipping batch update")
-			continue
-		}
-		err = s.Store.ExecuteQuery(ctx, query, args...)
+		count, err := s.Store.BatchUpdateDeliveries(ctx, batchData, 3)
 		if err != nil {
 			s.Logger.Error("[hermes] Failed to execute delivery batch update query", "error", err)
 			return err
 		}
+		s.Logger.Info("Updated deliveries table", "count", count)
 	}
 }
 

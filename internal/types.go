@@ -52,4 +52,5 @@ type DeliveryBatchData struct {
 	Success     bool
 	ErrMessage  string
 	BackoffTime time.Time
+	RetryCount  int
 }

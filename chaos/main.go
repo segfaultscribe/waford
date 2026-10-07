@@ -17,12 +17,14 @@ func chaosHandler(w http.ResponseWriter, r *http.Request) {
 	// return an http.StatusOK (200)
 	if chance >= 1 && chance <= 33 {
 		w.WriteHeader(http.StatusAccepted)
+		log.Printf("Happy path")
 		return
 	}
 
 	// The Flaky Target (33% chance)
 	// Return an http.StatusInternalServerError (500)
 	if chance > 33 && chance <= 66 {
+		log.Printf("Flaky path")
 		http.Error(w, "Chaos Server Error!", http.StatusInternalServerError)
 		return
 	}
@@ -33,6 +35,7 @@ func chaosHandler(w http.ResponseWriter, r *http.Request) {
 	// so our forwarder should aggressively sever this connection before the sleep finishes
 	if chance > 66 && chance <= 100 {
 		time.Sleep(6 * time.Second)
+		log.Printf("Tar pit")
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
