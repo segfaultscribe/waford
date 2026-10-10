@@ -7,20 +7,28 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/pressly/goose/v3"
 	"github.com/segfaultscribe/waford/internal"
 	"github.com/segfaultscribe/waford/internal/db"
+	"github.com/segfaultscribe/waford/internal/metrcs"
 )
 
 func main() {
+	cfg, err := internal.LoadConfig(".")
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+		os.Exit(1)
+	}
+	metrcs.Init()
 	// initialize logger
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	database, err := db.InitDB("waford_001.db")
+	database, err := db.InitDB(cfg.Database.Path)
 	if err != nil {
 		slog.Error("Initialization error: %v", err)
 	}
@@ -46,17 +54,17 @@ func main() {
 
 	store := internal.NewStore(database, logger)
 	// create the server
-	app := internal.CreateServer(10000, logger, store)
+	app := internal.CreateServer(10000, logger, store, cfg)
 
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 	// start all workers before server goes up
-	app.StartWorkers(appCtx, 1000, 200, 1)
-	app.StartChronos(appCtx, 10*time.Second)
-	app.StartHermes(appCtx, 10)
+	// app.StartWorkers(appCtx, 1000, 200, 1)
+	app.StartChronos(appCtx, cfg.Worker.PollInterval)
+	app.StartHermes(appCtx, cfg.Worker.Count)
 
 	srvr := &http.Server{
-		Addr:    ":3000",
+		Addr:    ":" + strconv.Itoa(cfg.Server.Port),
 		Handler: app.Router,
 	}
 

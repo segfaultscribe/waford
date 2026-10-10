@@ -36,3 +36,5 @@ logs.txt
 payload.json
 
 *.db
+
+waford.yaml

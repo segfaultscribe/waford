@@ -1,9 +1,9 @@
 ### Send webhook event
-POST http://localhost:3000/distributors
+POST http://localhost:7474/distributors
 Content-Type: application/json
 
 {
-  "name": "Acme no new Corp",
+  "name": "Fenugeek-7",
   "destinations": [
     "http://localhost:4000/dest",
     "http://localhost:4000/dest",
@@ -38,8 +38,10 @@ Content-Type: application/json
 
 
 ### Add new event
-POST http://localhost:3000/distributors/01M4922P1QQVKJ44R42H93TAM7/events
+POST http://localhost:3000/distributors/01M4F98C6TD651R7N9H5RNFGFJ/events
 Content-Type: application/json
+X-hubris-war: bababooi
+Awesome-header: wawei
 
 {
   "name": "This da job!"

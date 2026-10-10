@@ -1,0 +1,18 @@
+server:
+  port:
+database:
+  path:
+worker:
+  count: 
+  poll_interval: 
+  stale_recovery_timeout: 
+delivery:
+  timeout: 
+  pending__pull_limit: 
+  retry:
+    base_delay: 
+    max_delay: 
+    max_retries:
+    retry_pull_limit: 
+
+

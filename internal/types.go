@@ -38,6 +38,7 @@ type Delivery struct {
 	Url        string `db:"url"`
 	Payload    []byte `db:"payload"`
 	retryCount int    `db:"retry_count"`
+	meta       []byte `db:"meta"`
 }
 
 type DeliverResult struct {
@@ -54,3 +55,19 @@ type DeliveryBatchData struct {
 	BackoffTime time.Time
 	RetryCount  int
 }
+
+type EventMeta struct {
+	Method      string              `json:"method"`
+	Path        string              `json:"path"`
+	QueryParams map[string][]string `json:"query_params"`
+	Headers     map[string]string   `json:"headers"`
+}
+
+var (
+	defaultHeaderPrefixes = []string{"x-", "webhook-", "stripe-", "github-"}
+	defaultHeaderKeys     = map[string]struct{}{
+		"content-type":  {},
+		"traceparent":   {},
+		"authorization": {},
+	}
+)

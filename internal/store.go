@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/segfaultscribe/waford/internal/metrcs"
 )
 
 type Store struct {
@@ -57,11 +59,11 @@ func (s *Store) SaveDestinations(ctx context.Context, distributorID string, urls
 	return err
 }
 
-func (s *Store) SaveEvent(ctx context.Context, distributorID string, payload []byte) (string, error) {
+func (s *Store) SaveEvent(ctx context.Context, distributorID string, payload, meta []byte) (string, error) {
 	ulid := s.idg.New().String()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO events (id, distributor_id, payload, created_at) VALUES (?, ?, ?, ?)`,
-		ulid, distributorID, payload, time.Now().UTC(),
+		`INSERT INTO events (id, distributor_id, payload, meta, created_at) VALUES (?, ?, ?, ?, ?)`,
+		ulid, distributorID, payload, meta, time.Now().UTC(),
 	)
 	return ulid, err
 }
@@ -226,9 +228,11 @@ func (s *Store) BatchUpdateDeliveries(ctx context.Context, batch []DeliveryBatch
 				status = StatusRetry
 				newRetryCount = item.RetryCount + 1
 				nextRetryAt = item.BackoffTime.UTC().Format("2006-01-02 15:04:05")
+				metrcs.DeliveriesTotal.WithLabelValues("retry").Inc()
 			} else {
 				status = StatusDLQ
 				deadAt = &now
+				metrcs.DeliveriesTotal.WithLabelValues("dlq").Inc()
 			}
 		}
 
@@ -315,7 +319,7 @@ func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLi
 	`
 
 	getActualDeliveryQuery := `
-		SELECT d.id, dest.url, d.retry_count, e.payload
+		SELECT d.id, dest.url, d.retry_count, e.payload, e.meta
 		FROM deliveries d
 		JOIN events e on d.event_id = e.id
 		JOIN destinations dest on d.destination_id = dest.id
@@ -364,7 +368,7 @@ func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLi
 	var deliveries []Delivery
 	for deliveryRows.Next() {
 		var d Delivery
-		if err := deliveryRows.Scan(&d.ID, &d.Url, &d.retryCount, &d.Payload); err != nil {
+		if err := deliveryRows.Scan(&d.ID, &d.Url, &d.retryCount, &d.Payload, &d.meta); err != nil {
 			return nil, err
 		}
 		deliveries = append(deliveries, d)
@@ -375,4 +379,52 @@ func (s *Store) JobFinder(ctx context.Context, retryCount, pendingLimit, retryLi
 	}
 
 	return deliveries, nil
+}
+
+func (s *Store) GetDistributors(ctx context.Context, id string) (*Distributor, error) {
+	query := `
+		SELECT d.name, GROUP_CONCAT(dest.url, ',')
+        FROM distributors d
+        JOIN destinations dest ON dest.distributor_id = d.id
+        WHERE d.id = ?
+        GROUP BY d.id;
+		`
+
+	var D Distributor
+	var rawURLs string
+
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&D.Name, &rawURLs)
+	if err != nil {
+		s.logger.Error("Could not retrieve distributor")
+		return nil, err
+	}
+
+	if rawURLs != "" {
+		D.Destinations = strings.Split(rawURLs, ",")
+	} else {
+		s.logger.Error("Unexpected error: empty destinations")
+	}
+
+	return &D, nil
+}
+
+func (s *Store) DeleteDistributors(ctx context.Context, id string) error {
+	query := `
+		DELETE FROM distributors WHERE id = ?
+	`
+	res, err := s.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

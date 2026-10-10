@@ -8,8 +8,11 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
+
+	"github.com/segfaultscribe/waford/internal/metrcs"
 )
 
 var httpClient = &http.Client{
@@ -38,174 +41,17 @@ func sendRequest(ctx context.Context, eventId string, url string, body json.RawM
 	return nil
 }
 
-func (s *Server) handleFreshJob(ctx context.Context) {
-	defer s.WG.Done()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case current := <-s.JM.JobBuffer:
-			s.Logger.Info(
-				"[worker] Picked up FRESH job",
-				"jobId", current.EventID,
-				"destination", current.Destination,
-			)
-			// create context
-			ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-			// send the request
-			err := sendRequest(ctxReq, current.EventID, current.Destination, current.Payload)
-			cancel()
-
-			if err != nil {
-				current.LastError = err.Error()
-				delay := expBackoff(current.RetryCount)
-				s.Logger.Warn("[worker] FRESH Job failed, scheduling retry",
-					"jobId", current.EventID,
-					"error", err.Error(),
-					"retry_count", current.RetryCount,
-					"delay", delay.String(),
-				)
-
-				go func(j Job, d time.Duration) {
-					select {
-					case <-ctx.Done():
-						// server shuting down
-						// Safely abort.
-						// Can write to DLQ here, but I'm too lazy
-						return
-					case <-time.After(d):
-						s.JM.RetryBuffer <- j
-						s.Logger.Warn(
-							"[worker] Job moved to retry buffer",
-							"jobId", current.EventID,
-							"retry count", current.RetryCount,
-						)
-					}
-				}(current, delay)
-				continue
-			}
-			s.Logger.Info(
-				"[worker] Fresh Job delivered successfully",
-				"job_id", current.EventID,
-				"destination", current.Destination,
-			)
-		}
-	}
-}
-
-func (s *Server) handleRetries(ctx context.Context) {
-	defer s.WG.Done()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case current := <-s.JM.RetryBuffer:
-			s.Logger.Info(
-				"[worker] Picked up RETRY job",
-				"jobId", current.EventID,
-				"destination", current.Destination,
-			)
-			if current.RetryCount > 3 {
-				s.JM.DLQBuffer <- current
-				s.Logger.Warn(
-					"[worker] Job moved to DLQ Buffer",
-					"jobId", current.EventID,
-					"retry count", current.RetryCount,
-				)
-				continue
-			}
-
-			current.RetryCount++
-
-			ctxReq, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-			err := sendRequest(ctxReq, current.EventID, current.Destination, current.Payload)
-			cancel()
-
-			if err != nil {
-				current.LastError = err.Error()
-				delay := expBackoff(current.RetryCount)
-				s.Logger.Warn("[worker] RETRY Job failed, scheduling retry",
-					"jobId", current.EventID,
-					"error", err.Error(),
-					"retry_count", current.RetryCount,
-					"delay", delay.String(),
-				)
-
-				go func(j Job, d time.Duration) {
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(d):
-						s.JM.RetryBuffer <- j
-						s.Logger.Warn(
-							"[worker] Adding job to retry buffer",
-							"jobId", j.EventID,
-							"retry count", j.RetryCount,
-						)
-					}
-				}(current, delay)
-				continue
-			}
-			s.Logger.Info(
-				"[worker] Retried Job delivered successfully",
-				"job_id", current.EventID,
-				"destination", current.Destination,
-				"retry count", current.RetryCount,
-			)
-		}
-	}
-}
-
-func expBackoff(count int) time.Duration {
+func (s *Server) expBackoff(count int) time.Duration {
 	// Calculate the raw exponential backoff
 	multiplier := math.Pow(2, float64(count))
-	backoff := float64(BaseDelay) * multiplier
+	backoff := float64(s.Config.Retry.BaseDelay) * multiplier
 	// Cap the backoff to the maximum allowed delay
-	if backoff > float64(MaxDelay) {
-		backoff = float64(MaxDelay)
+	if backoff > float64(s.Config.Retry.MaxDelay) {
+		backoff = float64(s.Config.Retry.MaxDelay)
 	}
 	// full jitter
 	jitteredBackoff := backoff * rand.Float64()
 	return time.Duration(jitteredBackoff)
-}
-
-func (s *Server) StartWorkers(appCtx context.Context, numFreshWorkers int, numRetryWorkers int, numDLQWorkers int) {
-	// fleet of workers for fresh incoming webhooks
-	for i := 0; i < numFreshWorkers; i++ {
-		s.WG.Add(1)
-		go s.handleFreshJob(appCtx)
-	}
-	s.Logger.Info("[worker] Started fresh job workers", "count:", numFreshWorkers)
-
-	// separate fleet just for retries so they
-	// don't block fresh traffic
-	for i := 0; i < numRetryWorkers; i++ {
-		s.WG.Add(1)
-		go s.handleRetries(appCtx)
-	}
-	s.Logger.Info("[worker] Started retry workers", "count:", numRetryWorkers)
-
-	// DLQ workers: this would be just 1 but it's in a loop because,
-	// could update the file reading to be mutex Locked  so that multiple writers can safely access it
-	// right now, as you might have guessed that's not the case.
-	for i := 0; i < numDLQWorkers; i++ {
-		s.WG.Add(1)
-		go s.handleDLQ(appCtx)
-	}
-	s.Logger.Info(
-		"[worker] Started DLQ workers",
-		"count:",
-		numDLQWorkers,
-	)
-	s.Logger.Info("[worker] NOTE: There should be only 1 DLQ worker running due to architectural reasons")
-
-	// fmt.Printf("Started %d fresh workers; %d retry workers; %d DLQ workers\n", numFreshWorkers, numRetryWorkers, numDLQWorkers)
 }
 
 func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
@@ -213,6 +59,7 @@ func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
 	defer ticker.Stop()
 
 	s.Logger.Info("[Chronos] Worker Online", "interval", pollInterval)
+	metrcs.ChronosPollTotal.Inc()
 
 	for {
 		select {
@@ -274,7 +121,12 @@ func (s *Server) Hermes(ctx context.Context) error {
 		}
 
 		// find work
-		deliveries, err := s.Store.JobFinder(ctx, 3, 40, 10)
+		deliveries, err := s.Store.JobFinder(
+			ctx,
+			s.Config.Delivery.Retry.MaxRetries,
+			s.Config.Delivery.PendingPullLimit,
+			s.Config.Delivery.Retry.RetryPullLimit,
+		)
 		if err != nil {
 			s.Logger.Error("[hermes] Failed to find jobs", "error", err)
 			return err
@@ -290,6 +142,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 			}
 			continue
 		}
+		metrcs.HermesWorkersActive.Inc()
 
 		s.Logger.Info("Hermes fetched deliveries", "count", len(deliveries))
 		var wg sync.WaitGroup
@@ -302,19 +155,24 @@ func (s *Server) Hermes(ctx context.Context) error {
 
 				defer func() { results <- dr }()
 
-				req, err := http.NewRequestWithContext(ctx, "POST", delivery.Url, bytes.NewReader(delivery.Payload))
-				if err != nil {
-					dr.Err = err
-					return
-				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Webhook-Event-Id", delivery.ID)
+				req, err := ReconstructRequest(ctx, delivery)
 
+				// req, err := http.NewRequestWithContext(ctx, "POST", delivery.Url, bytes.NewReader(delivery.Payload))
+				// if err != nil {
+				// 	dr.Err = err
+				// 	return
+				// }
+				// req.Header.Set("Content-Type", "application/json")
+				// req.Header.Set("X-Webhook-Event-Id", delivery.ID)
+				start := time.Now()
 				resp, err := httpClient.Do(req)
 				if err != nil {
 					dr.Err = err
 					return
 				}
+				metrcs.DeliveryDuration.Observe(
+					time.Since(start).Seconds(),
+				)
 				defer resp.Body.Close()
 
 				if resp.StatusCode >= 300 {
@@ -325,6 +183,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 				dr.Success = true
 				dr.Err = nil
 				dr.ID = delivery.ID
+				metrcs.DeliveriesTotal.WithLabelValues("success").Inc()
 				s.Logger.Info("Delivery Succes", "id", dr.ID)
 			})
 		}
@@ -342,7 +201,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 				bd.ErrMessage = res.Err.Error()
 			}
 
-			nextRetryAt := expBackoff(res.RetryCount + 1)
+			nextRetryAt := s.expBackoff(res.RetryCount + 1)
 			bd.RetryCount = res.RetryCount
 
 			bd.BackoffTime = time.Now().UTC().Add(nextRetryAt)
@@ -355,11 +214,12 @@ func (s *Server) Hermes(ctx context.Context) error {
 			return err
 		}
 		s.Logger.Info("Updated deliveries table", "count", count)
+		metrcs.HermesWorkersActive.Dec()
 	}
 }
 
 func (s *Server) StartHermes(appCtx context.Context, n int) error {
-	count, err := s.Store.RecoverStaleJobs(appCtx, 5*time.Minute)
+	count, err := s.Store.RecoverStaleJobs(appCtx, s.Config.Worker.StaleRecoverytimeout)
 	if err != nil {
 		s.Logger.Error("[hermes] Failed to recover stale jobs", "error", err)
 		return err
@@ -377,4 +237,43 @@ func (s *Server) StartHermes(appCtx context.Context, n int) error {
 		})
 	}
 	return nil
+}
+
+func ReconstructRequest(ctx context.Context, record Delivery) (*http.Request, error) {
+	var meta EventMeta
+	if err := json.Unmarshal(record.meta, &meta); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event meta: %w", err)
+	}
+
+	parsedURL, err := url.Parse(record.Url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target downstream URL: %w", err)
+	}
+
+	// Attach stored query parameters to the target URL
+	if len(meta.QueryParams) > 0 {
+		query := parsedURL.Query()
+		for key, values := range meta.QueryParams {
+			for _, val := range values {
+				query.Add(key, val)
+			}
+		}
+		parsedURL.RawQuery = query.Encode()
+	}
+
+	method := meta.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), bytes.NewReader(record.Payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create outgoing request: %w", err)
+	}
+
+	for key, value := range meta.Headers {
+		req.Header.Set(key, value)
+	}
+
+	return req, nil
 }

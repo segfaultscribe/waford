@@ -6,57 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/segfaultscribe/waford/internal/metrcs"
 )
-
-func (s *Server) handleIngress(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	defer r.Body.Close()
-
-	body, err := io.ReadAll(r.Body)
-
-	if !json.Valid(body) || err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	incomingEventId := uuid.New().String()
-
-	for _, dest := range Destinations {
-
-		// jobId := uuid.New().String()
-		newJob := Job{
-			EventID:     incomingEventId,
-			Payload:     body,
-			RetryCount:  0,
-			Destination: dest,
-		}
-
-		select {
-		case s.JM.JobBuffer <- newJob:
-		default:
-			// The channel is 100% full. SHED THE LOAD!
-			// instantly reject the request so the client can backoff
-			s.Logger.Warn("System at capacity, shedding load", "event_id", incomingEventId)
-			http.Error(w, "server is at capacity, please retry later", http.StatusTooManyRequests)
-			return
-		}
-
-		s.Logger.Info("[Job] New Job registered JobId:", "jobId", incomingEventId)
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
-type handlers struct {
-	store Store
-}
-
-func NewHandlers(store Store) *handlers {
-	return &handlers{store: store}
-}
 
 func (s *Server) createDistributorHandler(w http.ResponseWriter, r *http.Request) {
 	distributor := &Distributor{}
@@ -108,12 +62,23 @@ func (s *Server) handleRegisterEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.Store.SaveEvent(r.Context(), distributorID, payload)
+	metaStruct := extractMetadata(r)
+
+	metaBlob, err := json.Marshal(metaStruct)
+	if err != nil {
+		s.Logger.Error("[Event] Failed to marshal metadata", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	id, err := s.Store.SaveEvent(r.Context(), distributorID, payload, metaBlob)
 	if err != nil {
 		s.Logger.Error("[Event] Failed to save event", "error", err, "distributorID", distributorID)
 		http.Error(w, "Failed to save event", http.StatusInternalServerError)
 		return
 	}
+	metrcs.EventsReceived.Inc()
+
 	// send a signal to wake up chronos
 	select {
 	case s.JM.ChronosSignal <- struct{}{}:
@@ -126,11 +91,84 @@ func (s *Server) handleRegisterEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) getDistributorInfo(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		s.Logger.Error("Received empty id")
+		http.Error(w, "Missing 'id' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	distributorInfo, err := s.Store.GetDistributors(ctx, id)
+	if err != nil {
+		s.Logger.Error("Failed to fetch distributor", "error", err)
+		http.Error(w, "Error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if distributorInfo == nil {
+		http.Error(w, "Distributor not found", http.StatusNotFound)
+		return
+	}
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(distributorInfo); err != nil {
+		s.Logger.Error("Failed to encode distributor response", "error", err)
+	}
+}
+
+func (s *Server) deleteDistributor(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		s.Logger.Error("Received empty id for deletion")
+		http.Error(w, "Missing 'id' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// Call repository layer
+	err := s.Store.DeleteDistributors(ctx, id)
+	if err != nil {
+		s.Logger.Error("Failed to delete distributor", "error", err)
+		http.Error(w, "Error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Success response: 204 No Content is standard for successful deletions
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		s.Logger.Error("Failed to encode JSON response", "error", err)
+	}
+}
+
+func extractMetadata(r *http.Request) EventMeta {
+	capturedHeaders := make(map[string]string)
+
+	for key, values := range r.Header {
+		if _, ok := HopByHopHeaders[strings.ToLower(key)]; ok {
+			continue
+		}
+		capturedHeaders[http.CanonicalHeaderKey(key)] = values[0]
+	}
+
+	return EventMeta{
+		Method:      r.Method,
+		Path:        r.URL.Path,
+		QueryParams: r.URL.Query(),
+		Headers:     capturedHeaders,
 	}
 }

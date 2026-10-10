@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS events (
     distributor_id TEXT NOT NULL,
     fanned_out BOOLEAN DEFAULT FALSE,
     payload TEXT NOT NULL,
+    meta JSON NOT NULL DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (distributor_id) REFERENCES distributors(id) ON DELETE CASCADE
 );

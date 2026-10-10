@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type JobManager struct {
@@ -22,9 +23,10 @@ type Server struct {
 	Logger *slog.Logger
 	WG     *sync.WaitGroup
 	Store  *Store
+	Config *Config
 }
 
-func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
+func CreateServer(bufferSize int, lg *slog.Logger, store *Store, config *Config) *Server {
 	jm := &JobManager{
 		JobBuffer:     make(chan Job, bufferSize),
 		RetryBuffer:   make(chan Job, bufferSize),
@@ -39,6 +41,7 @@ func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
 		Logger: lg,
 		WG:     &sync.WaitGroup{},
 		Store:  store,
+		Config: config,
 	}
 
 	s.Router.Use(middleware.Logger)
@@ -47,7 +50,9 @@ func CreateServer(bufferSize int, lg *slog.Logger, store *Store) *Server {
 }
 
 func (s *Server) routes() {
-	s.Router.Post("/ingress", s.handleIngress)
 	s.Router.Post("/distributors", s.createDistributorHandler)
 	s.Router.Post("/distributors/{distributorID}/events", s.handleRegisterEvent)
+	s.Router.Get("/distributors/{id}", s.getDistributorInfo)
+	s.Router.Delete("/distributors/{id}", s.deleteDistributor)
+	s.Router.Handle("/metrics", promhttp.Handler())
 }
