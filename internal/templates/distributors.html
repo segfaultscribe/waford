@@ -1,0 +1,337 @@
+{{ define "distributors" }}
+{{ template "layout" . }}
+{{ end }}
+
+{{ define "content" }}
+
+<header class="page-header">
+    <div>
+        <div class="eyebrow">WAFORD</div>
+        <h1>Distributors</h1>
+        <p class="page-description">
+            Configure where incoming events are forwarded.
+        </p>
+    </div>
+
+    <button class="button button-primary" id="add-distributor-btn">
+        + Add distributor
+    </button>
+</header>
+
+<section class="content-section">
+
+    <div id="distributor-list">
+
+        {{ range .Distributors }}
+
+        <article class="data-card distributor-card">
+
+            <div class="data-card-header">
+                <div>
+                    <h2>{{ .Name }}</h2>
+                    <span class="muted">ID: {{ .ID }}</span>
+                </div>
+
+                <div class="card-actions">
+                    <a
+                        class="button button-secondary"
+                        href="/distributors/{{ .ID }}"
+                    >
+                        View
+                    </a>
+
+                    <button
+                        class="button button-danger"
+                        data-delete-distributor="{{ .ID }}"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+
+            <div class="destination-section">
+                <div class="section-label">
+                    Destinations
+                </div>
+
+                <div class="destination-list">
+
+                    {{ range .Destinations }}
+                    <div class="destination-row">
+                        <span class="status-dot healthy"></span>
+                        <code>{{ .URL }}</code>
+                    </div>
+                    {{ end }}
+
+                </div>
+            </div>
+
+        </article>
+
+        {{ else }}
+
+        <div class="empty-state">
+            <h2>No distributors</h2>
+            <p>Create your first distributor to start forwarding events.</p>
+
+            <button
+                class="button button-primary"
+                id="empty-add-distributor-btn"
+            >
+                + Add distributor
+            </button>
+        </div>
+
+        {{ end }}
+
+    </div>
+
+</section>
+
+<!-- Add distributor modal -->
+
+<div class="modal hidden" id="distributor-modal">
+
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-content">
+
+        <div class="modal-header">
+            <div>
+                <div class="eyebrow">DISTRIBUTOR</div>
+                <h2>Add distributor</h2>
+            </div>
+
+            <button
+                class="modal-close"
+                id="close-distributor-modal"
+            >
+                ×
+            </button>
+        </div>
+
+        <form id="distributor-form">
+
+            <label>
+                Name
+                <input
+                    type="text"
+                    name="name"
+                    required
+                    placeholder="Payments"
+                >
+            </label>
+
+            <div class="form-group">
+
+                <div class="form-label-row">
+                    <label>Destination URLs</label>
+
+                    <button
+                        type="button"
+                        class="button button-secondary button-small"
+                        id="add-destination"
+                    >
+                        + Add
+                    </button>
+                </div>
+
+                <div id="destination-inputs">
+
+                    <div class="destination-input">
+                        <input
+                            type="url"
+                            name="destinations"
+                            required
+                            placeholder="https://example.com/webhook"
+                        >
+
+                        <button
+                            type="button"
+                            class="remove-destination"
+                        >
+                            ×
+                        </button>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="form-actions">
+                <button
+                    type="button"
+                    class="button button-secondary"
+                    id="cancel-distributor"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    type="submit"
+                    class="button button-primary"
+                >
+                    Create distributor
+                </button>
+            </div>
+
+            <div id="distributor-error" class="form-error hidden"></div>
+
+        </form>
+
+    </div>
+</div>
+
+<script>
+(() => {
+    const modal = document.getElementById("distributor-modal");
+    const form = document.getElementById("distributor-form");
+    const destinationInputs =
+        document.getElementById("destination-inputs");
+
+    const openButtons = [
+        document.getElementById("add-distributor-btn"),
+        document.getElementById("empty-add-distributor-btn")
+    ];
+
+    function openModal() {
+        modal.classList.remove("hidden");
+    }
+
+    function closeModal() {
+        modal.classList.add("hidden");
+    }
+
+    openButtons.forEach(button => {
+        if (button) {
+            button.addEventListener("click", openModal);
+        }
+    });
+
+    document
+        .getElementById("close-distributor-modal")
+        .addEventListener("click", closeModal);
+
+    document
+        .getElementById("cancel-distributor")
+        .addEventListener("click", closeModal);
+
+    document
+        .getElementById("add-destination")
+        .addEventListener("click", () => {
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "destination-input";
+
+            wrapper.innerHTML = `
+                <input
+                    type="url"
+                    name="destinations"
+                    required
+                    placeholder="https://example.com/webhook"
+                >
+
+                <button
+                    type="button"
+                    class="remove-destination"
+                >
+                    ×
+                </button>
+            `;
+
+            destinationInputs.appendChild(wrapper);
+        });
+
+    destinationInputs.addEventListener("click", event => {
+
+        if (!event.target.classList.contains("remove-destination")) {
+            return;
+        }
+
+        const rows =
+            destinationInputs.querySelectorAll(".destination-input");
+
+        if (rows.length <= 1) {
+            return;
+        }
+
+        event.target.closest(".destination-input").remove();
+    });
+
+    form.addEventListener("submit", async event => {
+
+        event.preventDefault();
+
+        const errorElement =
+            document.getElementById("distributor-error");
+
+        errorElement.classList.add("hidden");
+
+        const formData = new FormData(form);
+
+        const payload = {
+            name: formData.get("name"),
+            destinations: formData.getAll("destinations")
+        };
+
+        try {
+
+            const response = await fetch("/distributors", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(
+                    await response.text()
+                );
+            }
+
+            window.location.reload();
+
+        } catch (error) {
+
+            errorElement.textContent =
+                "Failed to create distributor: " + error.message;
+
+            errorElement.classList.remove("hidden");
+        }
+    });
+
+    document.addEventListener("click", async event => {
+
+        const button =
+            event.target.closest("[data-delete-distributor]");
+
+        if (!button) {
+            return;
+        }
+
+        const id =
+            button.dataset.deleteDistributor;
+
+        if (!confirm(
+            "Delete this distributor? This cannot be undone."
+        )) {
+            return;
+        }
+
+        const response =
+            await fetch(`/distributors/${id}`, {
+                method: "DELETE"
+            });
+
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert("Failed to delete distributor.");
+        }
+    });
+
+})();
+</script>
+
+{{ end }}

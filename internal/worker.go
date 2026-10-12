@@ -58,7 +58,6 @@ func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	s.Logger.Info("[Chronos] Worker Online", "interval", pollInterval)
 	metrcs.ChronosPollTotal.Inc()
 
 	for {
@@ -67,7 +66,6 @@ func (s *Server) Chronos(ctx context.Context, pollInterval time.Duration) {
 			s.Logger.Info("[Chronos] Worker shutting down")
 			return
 		case <-ticker.C:
-			s.Logger.Info("[Chronos] Polling events")
 			s.FillDeliveries(ctx)
 			continue
 		case <-s.JM.ChronosSignal:
@@ -86,7 +84,6 @@ func (s *Server) FillDeliveries(ctx context.Context) {
 	}
 
 	if len(events) == 0 {
-		s.Logger.Info("[chronos] Found no fresh events to process")
 		return
 	}
 
@@ -133,7 +130,6 @@ func (s *Server) Hermes(ctx context.Context) error {
 		}
 
 		if len(deliveries) == 0 {
-			s.Logger.Info("[hermes] Found no jobs to process, Hermes will now go to sleep. Bye 💤")
 			select {
 			case <-s.JM.HermesSignal:
 			case <-time.After(5 * time.Second):
@@ -143,6 +139,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 			continue
 		}
 		metrcs.HermesWorkersActive.Inc()
+		s.ActiveWorkers.Add(1)
 
 		s.Logger.Info("Hermes fetched deliveries", "count", len(deliveries))
 		var wg sync.WaitGroup
@@ -163,7 +160,7 @@ func (s *Server) Hermes(ctx context.Context) error {
 				// 	return
 				// }
 				// req.Header.Set("Content-Type", "application/json")
-				// req.Header.Set("X-Webhook-Event-Id", delivery.ID)
+				req.Header.Set("X-Waford-Delivery-Id", delivery.ID)
 				start := time.Now()
 				resp, err := httpClient.Do(req)
 				if err != nil {
@@ -208,13 +205,16 @@ func (s *Server) Hermes(ctx context.Context) error {
 			batchData = append(batchData, bd)
 		}
 
+		s.ActiveWorkers.Add(-1)
+		metrcs.HermesWorkersActive.Dec()
+
 		count, err := s.Store.BatchUpdateDeliveries(ctx, batchData, 3)
 		if err != nil {
 			s.Logger.Error("[hermes] Failed to execute delivery batch update query", "error", err)
 			return err
 		}
 		s.Logger.Info("Updated deliveries table", "count", count)
-		metrcs.HermesWorkersActive.Dec()
+
 	}
 }
 

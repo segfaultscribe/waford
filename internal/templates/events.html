@@ -1,0 +1,179 @@
+{{ define "events" }}
+{{ template "layout" . }}
+{{ end }}
+
+{{ define "content" }}
+
+<header class="page-header">
+    <div>
+        <div class="eyebrow">WAFORD</div>
+        <h1>Events</h1>
+        <p class="page-description">
+            Incoming events and their delivery status.
+        </p>
+    </div>
+</header>
+
+<section class="content-section">
+
+    <div class="toolbar">
+
+        <input
+            type="search"
+            id="event-search"
+            class="search-input"
+            placeholder="Search event ID..."
+        >
+
+        <select id="event-status">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="retry">Retrying</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="dead">Dead</option>
+        </select>
+
+    </div>
+
+    <div class="event-table-wrapper">
+
+        <table class="data-table">
+
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Distributor</th>
+                    <th>Received</th>
+                    <th>Deliveries</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+
+            <tbody id="event-list">
+
+                {{ range .Events }}
+
+                <tr
+                    class="event-row"
+                    data-event-id="{{ .ID }}"
+                    data-status="{{ .Status }}"
+                >
+
+                    <td>
+                        <a href="/events/{{ .ID }}">
+                            <code>{{ .ID }}</code>
+                        </a>
+                    </td>
+
+                    <td>
+                        <div>{{ .DistributorName }}</div>
+                        <span class="muted">
+                            {{ .DistributorID }}
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ .CreatedAt }}
+                    </td>
+
+                    <td>
+                        {{ .SuccessfulDeliveries }}
+                        /
+                        {{ .TotalDeliveries }}
+                    </td>
+
+                    <td>
+                        {{ if eq .Status "delivered" }}
+                            <span class="status status-success">
+                                Succeeded
+                            </span>
+                        {{ else if eq .Status "retry" }}
+                            <span class="status status-warning">
+                                Retrying
+                            </span>
+                        {{ else if eq .Status "dlq" }}
+                            <span class="status status-danger">
+                                Dead
+                            </span>
+                        {{ else }}
+                            <span class="status status-pending">
+                                Pending
+                            </span>
+                        {{ end }}
+                    </td>
+
+                </tr>
+
+                {{ else }}
+
+                <tr>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            <h2>No events</h2>
+                            <p>
+                                Events received by Waford will appear here.
+                            </p>
+                        </div>
+                    </td>
+                </tr>
+
+                {{ end }}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+<script>
+(() => {
+
+    const search =
+        document.getElementById("event-search");
+
+    const status =
+        document.getElementById("event-status");
+
+    const rows =
+        document.querySelectorAll(".event-row");
+
+    function filterEvents() {
+
+        const searchValue =
+            search.value.toLowerCase();
+
+        const statusValue =
+            status.value;
+
+        rows.forEach(row => {
+
+            const eventID =
+                row.dataset.eventId.toLowerCase();
+
+            const eventStatus =
+                row.dataset.status;
+
+            const matchesSearch =
+                !searchValue ||
+                eventID.includes(searchValue);
+
+            const matchesStatus =
+                !statusValue ||
+                eventStatus === statusValue;
+
+            row.style.display =
+                matchesSearch && matchesStatus
+                    ? ""
+                    : "none";
+        });
+    }
+
+    search.addEventListener("input", filterEvents);
+    status.addEventListener("change", filterEvents);
+
+})();
+</script>
+
+{{ end }}

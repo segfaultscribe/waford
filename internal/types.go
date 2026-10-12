@@ -71,3 +71,37 @@ var (
 		"authorization": {},
 	}
 )
+
+type DashboardData struct {
+	EventsReceived       int     `json:"events_received"`
+	Deliveries           int     `json:"deliveries"`
+	SuccessRate          float64 `json:"success_rate"`
+	ActiveWorkers        int32   `json:"active_workers"`
+	TotalWorkers         int32   `json:"total_workers"`
+	SuccessfulDeliveries int     `json:"successful_deliveries"`
+	QueueDepth           int     `json:"queue_depth"`
+	DeadDeliveries       int     `json:"dead_deliveries"`
+}
+
+type DeliveryStats struct {
+	Total      int
+	Successful int
+	Pending    int
+	Retry      int
+	Dead       int
+}
+
+type DistributorPageData struct {
+	Title        string
+	Distributors []DistributorView
+}
+
+type DistributorView struct {
+	ID           string
+	Name         string
+	Destinations []DestinationView
+}
+
+type DestinationView struct {
+	URL string
+}

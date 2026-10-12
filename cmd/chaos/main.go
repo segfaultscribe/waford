@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// Chaos is a sample testing server
+// Run chaos and use it's endpoints to test the main waford application
+// chaos downstrem uses a rolling dice mechanism to behave irratically
 func chaosHandler(w http.ResponseWriter, r *http.Request) {
 	// random number to control probability of response type
 	chance := rand.Intn(100) + 1

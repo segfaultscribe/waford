@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/segfaultscribe/waford/internal/metrcs"
+	"github.com/segfaultscribe/waford/internal/templates"
 )
 
 func (s *Server) createDistributorHandler(w http.ResponseWriter, r *http.Request) {
@@ -171,4 +172,44 @@ func extractMetadata(r *http.Request) EventMeta {
 		QueryParams: r.URL.Query(),
 		Headers:     capturedHeaders,
 	}
+}
+
+func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
+	data, err := s.getDashboardData()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get dashboard data: %v", err), http.StatusInternalServerError)
+	}
+
+	templates.Pages["dashboard.html"].ExecuteTemplate(w, "layout", data)
+}
+
+func (s *Server) DashboardStatsHandler(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.getDashboardData()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get dashboard data: %w", err), http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		s.Logger.Error("failed to encode dashboard stats", "error", err)
+	}
+}
+
+func (s *Server) DistributorViewHandler(w http.ResponseWriter, r *http.Request) {
+	data := DistributorPageData{
+		Title: "Distributors",
+		Distributors: []DistributorView{
+			{
+				ID:   "dist_123",
+				Name: "Payments",
+				Destinations: []DestinationView{
+					{URL: "https://service-a.com/webhook"},
+					{URL: "https://service-b.com/webhook"},
+				},
+			},
+		},
+	}
+
+	templates.Pages["distributors.html"].ExecuteTemplate(w, "layout", data)
 }

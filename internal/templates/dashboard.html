@@ -1,0 +1,104 @@
+{{ define "content" }}
+
+<header class="page-header">
+    <div>
+        <div class="eyebrow">WAFORD</div>
+        <h1>Dashboard</h1>
+    </div>
+
+    <div class="system-health">
+        <span class="status-dot healthy"></span>
+        <span>Healthy</span>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="hero-content">
+        <div class="eyebrow">SYSTEM STATUS</div>
+
+        <h2>Everything is running smoothly.</h2>
+
+        <div class="health-line">
+            <span class="status-dot healthy"></span>
+            <strong>Healthy</strong>
+        </div>
+    </div>
+</section>
+
+<section class="metrics-grid">
+
+    <div class="metric-card">
+        <span class="metric-label">Events received</span>
+        <span id="events-received" class="metric-value">{{ .EventsReceived }}</span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Total Delivery Entries</span>
+        <span id="deliveries" class="metric-value">{{ .Deliveries }}</span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Success rate</span>
+        <span id="success-rate" class="metric-value">{{ printf "%.2f%%" .SuccessRate }}</span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Active workers</span>
+        <span id="active-workers" class="metric-value">
+            {{ .ActiveWorkers }} / {{ .TotalWorkers }}
+        </span>
+    </div>
+
+    <div class="metric-card">
+        <span class="metric-label">Queue</span>
+        <span id="queue-depth" class="metric-value">{{ .QueueDepth }}</span>
+    </div>
+
+    <div class="metric-card metric-card-danger">
+        <span class="metric-label">Dead deliveries</span>
+        <span id="dead-deliveries" class="metric-value">{{ .DeadDeliveries }}</span>
+    </div>
+</section>
+
+<script>
+console.log("Dashboard JS loaded");
+
+ async function refreshDashboard() {
+    try {
+        const response = await fetch("/api/dashboard/stats");
+
+        if (!response.ok) {
+            throw new Error("Failed to fetch dashboard stats");
+        }
+
+        const data = await response.json();
+
+        document.getElementById("events-received").textContent =
+            data.events_received;
+
+        document.getElementById("deliveries").textContent =
+            data.deliveries;
+
+        document.getElementById("success-rate").textContent =
+            data.success_rate.toFixed(2) + "%";
+
+        document.getElementById("active-workers").textContent =
+            `${data.active_workers} / ${data.total_workers}`;
+
+        document.getElementById("queue-depth").textContent =
+            data.queue_depth;
+
+        document.getElementById("dead-deliveries").textContent =
+            data.dead_deliveries;
+
+    } catch (err) {
+        console.error("Dashboard refresh failed:", err);
+    }
+} 
+
+refreshDashboard();
+setInterval(refreshDashboard, 5000);
+</script>
+
+{{ end }}
+

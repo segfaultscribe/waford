@@ -428,3 +428,41 @@ func (s *Store) DeleteDistributors(ctx context.Context, id string) error {
 
 	return nil
 }
+
+func (s *Store) GetTotalEvents(ctx context.Context) (int, error) {
+	query := `
+		SELECT count(*) FROM events
+	`
+	var count int = 0
+	err := s.db.QueryRowContext(ctx, query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (s *Store) GetDeliveryStat(ctx context.Context) (*DeliveryStats, error) {
+	query := `
+		SELECT
+		COUNT(*) AS total,
+		COUNT(*) FILTER (WHERE status = 'delivered') AS successful,
+		COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+		COUNT(*) FILTER (WHERE status = 'retry') AS retry,
+		COUNT(*) FILTER (WHERE status = 'dlq') AS dead
+		FROM deliveries;
+	`
+	var dStats DeliveryStats
+	err := s.db.QueryRowContext(ctx, query).Scan(
+		&dStats.Total,
+		&dStats.Successful,
+		&dStats.Pending,
+		&dStats.Retry,
+		&dStats.Dead,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dStats, nil
+}

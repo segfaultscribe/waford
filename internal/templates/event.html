@@ -1,0 +1,163 @@
+{{ define "event" }}
+{{ template "layout" . }}
+{{ end }}
+
+{{ define "content" }}
+
+<header class="page-header">
+
+    <div>
+
+        <div class="eyebrow">EVENT</div>
+
+        <h1>
+            <code>{{ .Event.ID }}</code>
+        </h1>
+
+        <p class="page-description">
+            {{ .Event.DistributorName }}
+            ·
+            {{ .Event.DistributorID }}
+        </p>
+
+    </div>
+
+    <div id="event-status">
+        {{ if eq .Event.Status "succeeded" }}
+            <span class="status status-success">Succeeded</span>
+        {{ else if eq .Event.Status "dead" }}
+            <span class="status status-danger">Dead</span>
+        {{ else if eq .Event.Status "retry" }}
+            <span class="status status-warning">Retrying</span>
+        {{ else }}
+            <span class="status status-pending">Pending</span>
+        {{ end }}
+    </div>
+
+</header>
+
+<section class="content-section">
+
+    <div class="data-card">
+
+        <div class="data-card-header">
+            <div>
+                <div class="section-label">
+                    Deliveries
+                </div>
+
+                <h2>
+                    {{ len .Deliveries }} destinations
+                </h2>
+            </div>
+        </div>
+
+        <div class="delivery-list" id="delivery-list">
+
+            {{ range .Deliveries }}
+
+            <div class="delivery-row">
+
+                <div class="delivery-main">
+
+                    {{ if eq .Status "succeeded" }}
+                        <span class="status-dot healthy"></span>
+                    {{ else if eq .Status "dead" }}
+                        <span class="status-dot danger"></span>
+                    {{ else }}
+                        <span class="status-dot warning"></span>
+                    {{ end }}
+
+                    <div>
+                        <code>{{ .URL }}</code>
+
+                        {{ if eq .Status "dead" }}
+                        <div class="delivery-error">
+                            {{ .LastError }}
+                        </div>
+                        {{ end }}
+                    </div>
+
+                </div>
+
+                <div class="delivery-meta">
+
+                    {{ if eq .Status "delivered" }}
+                        <span class="status status-success">
+                            Succeeded
+                        </span>
+                    {{ else if eq .Status "dlq" }}
+                        <span class="status status-danger">
+                            Dead
+                        </span>
+                    {{ else if eq .Status "retry" }}
+                        <span class="status status-warning">
+                            Retrying
+                        </span>
+                    {{ else }}
+                        <span class="status status-pending">
+                            Pending
+                        </span>
+                    {{ end }}
+
+                    {{ if .Duration }}
+                        <span class="muted">
+                            {{ .Duration }}
+                        </span>
+                    {{ end }}
+
+                </div>
+
+            </div>
+
+            {{ end }}
+
+        </div>
+
+    </div>
+
+</section>
+
+<script>
+(() => {
+
+    async function refreshEvent() {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/events/{{ .Event.ID }}"
+                );
+
+            if (!response.ok) {
+                return;
+            }
+
+            const event =
+                await response.json();
+
+            /*
+             * For now, simply reload when the event changes.
+             *
+             * Later we can update individual delivery rows
+             * without replacing the entire page.
+             */
+            if (event.status !== "{{ .Event.Status }}") {
+                window.location.reload();
+            }
+
+        } catch (error) {
+            console.error(
+                "Failed to refresh event:",
+                error
+            );
+        }
+    }
+
+    setInterval(refreshEvent, 5000);
+
+})();
+</script>
+
+{{ end }}

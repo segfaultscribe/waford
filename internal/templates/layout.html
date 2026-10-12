@@ -1,0 +1,62 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Waford</title>
+
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-mark">W</div>
+                <span>WAFORD</span>
+            </div>
+
+            <nav class="nav">
+                <a href="/" class="nav-item active">
+                    <span class="nav-icon">⌂</span>
+                    Dashboard
+                </a>
+
+                <a href="/distributors" class="nav-item">
+                    <span class="nav-icon">◇</span>
+                    Distributors
+                </a>
+
+                <a href="/events" class="nav-item">
+                    <span class="nav-icon">≡</span>
+                    Events
+                </a>
+
+                <a href="/system" class="nav-item">
+                    <span class="nav-icon">⌁</span>
+                    System
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="version-status">
+                    <span class="status-dot healthy"></span>
+                    <div>
+                        <div>Waford v0.1.0</div>
+                        <small>local instance</small>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            {{ template "content" . }}
+        </main>
+
+    </div>
+</body>
+</html>
+{{ end }}
