@@ -466,3 +466,263 @@ func (s *Store) GetDeliveryStat(ctx context.Context) (*DeliveryStats, error) {
 
 	return &dStats, nil
 }
+
+func (s *Store) GetAllDistributors(ctx context.Context) ([]*DistributorView, error) {
+	query := `
+        SELECT d.id, d.name, dest.url
+        FROM distributors d
+        LEFT JOIN destinations dest ON d.id = dest.distributor_id
+        ORDER BY d.name, dest.url
+    `
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	distributorMap := make(map[string]*DistributorView)
+	var ids []string
+
+	for rows.Next() {
+		var id, name string
+		var url sql.NullString
+
+		if err := rows.Scan(&id, &name, &url); err != nil {
+			return nil, err
+		}
+
+		distributor, exists := distributorMap[id]
+		if !exists {
+			distributor = &DistributorView{
+				ID:           id,
+				Name:         name,
+				Destinations: []string{},
+			}
+			distributorMap[id] = distributor
+			ids = append(ids, id)
+		}
+
+		if url.Valid {
+			distributor.Destinations = append(
+				distributor.Destinations,
+				url.String,
+			)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]*DistributorView, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, distributorMap[id])
+	}
+
+	return result, nil
+}
+
+func (s *Store) getAllEvents(ctx context.Context) ([]EventView, error) {
+	query := `
+		SELECT
+		e.id,
+		e.distributor_id,
+		d.name AS distributor_name,
+		e.fanned_out,
+		e.created_at,
+
+		COUNT(dl.id) AS total_deliveries,
+
+		SUM(CASE
+			WHEN dl.status = 'delivered' THEN 1
+			ELSE 0
+		END) AS successful_deliveries,
+
+		SUM(CASE
+			WHEN dl.status = 'dlq' THEN 1
+			ELSE 0
+		END) AS failed_deliveries
+
+		FROM events e
+		JOIN distributors d
+			ON d.id = e.distributor_id
+		LEFT JOIN deliveries dl
+			ON dl.event_id = e.id
+
+		GROUP BY
+			e.id,
+			e.distributor_id,
+			d.name,
+			e.fanned_out,
+			e.created_at
+
+		ORDER BY e.created_at DESC
+		LIMIT 100;
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []EventView
+	for rows.Next() {
+		var event EventView
+		var fannedOut bool
+
+		if err := rows.Scan(
+			&event.ID,
+			&event.DistributorID,
+			&event.DistributorName,
+			&fannedOut,
+			&event.CreatedAt,
+			&event.TotalDeliveries,
+			&event.SuccessfulDeliveries,
+			&event.FailedDeliveries,
+		); err != nil {
+			return nil, err
+		}
+
+		event.Status = deriveEventStatus(
+			fannedOut,
+			event.TotalDeliveries,
+			event.SuccessfulDeliveries,
+			event.FailedDeliveries,
+		)
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
+func (s *Store) GetEventDetail(
+	ctx context.Context,
+	eventID string,
+) (EventDetailView, error) {
+	query := `
+        SELECT
+            e.id,
+            e.distributor_id,
+            d.name,
+            e.fanned_out,
+            e.created_at,
+            e.payload,
+            e.meta,
+            COUNT(dl.id),
+            COALESCE(SUM(CASE
+                WHEN dl.status = 'delivered' THEN 1
+                ELSE 0
+            END), 0),
+            COALESCE(SUM(CASE
+                WHEN dl.status = 'dlq' THEN 1
+                ELSE 0
+            END), 0)
+        FROM events e
+        JOIN distributors d ON d.id = e.distributor_id
+        LEFT JOIN deliveries dl ON dl.event_id = e.id
+        WHERE e.id = ?
+        GROUP BY
+            e.id, e.distributor_id, d.name,
+            e.fanned_out, e.created_at, e.payload, e.meta;
+    `
+
+	var event EventDetailView
+	var fannedOut bool
+
+	err := s.db.QueryRowContext(ctx, query, eventID).Scan(
+		&event.ID,
+		&event.DistributorID,
+		&event.DistributorName,
+		&fannedOut,
+		&event.CreatedAt,
+		&event.Payload,
+		&event.Meta,
+		&event.TotalDeliveries,
+		&event.SuccessfulDeliveries,
+		&event.FailedDeliveries,
+	)
+	if err != nil {
+		return EventDetailView{}, err
+	}
+
+	event.Status = deriveEventStatus(
+		fannedOut,
+		event.TotalDeliveries,
+		event.SuccessfulDeliveries,
+		event.FailedDeliveries,
+	)
+
+	return event, nil
+}
+
+func (s *Store) GetDeliveriesByEventID(
+	ctx context.Context,
+	eventID string,
+) ([]DeliveryDetailView, error) {
+	query := `
+        SELECT
+            dl.id,
+            dl.destination_id,
+            dest.url,
+            dl.status,
+            dl.retry_count,
+            dl.last_error,
+            dl.created_at,
+            dl.updated_at,
+            dl.dead_at
+        FROM deliveries dl
+        JOIN destinations dest ON dest.id = dl.destination_id
+        WHERE dl.event_id = ?
+        ORDER BY dl.created_at ASC;
+    `
+
+	rows, err := s.db.QueryContext(ctx, query, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deliveries []DeliveryDetailView
+
+	for rows.Next() {
+		var delivery DeliveryDetailView
+		var lastError, deadAt sql.NullString
+
+		if err := rows.Scan(
+			&delivery.ID,
+			&delivery.DestinationID,
+			&delivery.DestinationURL,
+			&delivery.Status,
+			&delivery.RetryCount,
+			&lastError,
+			&delivery.CreatedAt,
+			&delivery.UpdatedAt,
+			&deadAt,
+		); err != nil {
+			return nil, err
+		}
+
+		if lastError.Valid {
+			delivery.LastError = lastError.String
+		}
+
+		if deadAt.Valid {
+			delivery.DeadAt = deadAt.String
+		}
+
+		deliveries = append(deliveries, delivery)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return deliveries, nil
+}

@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +20,12 @@ func (s *Server) createDistributorHandler(w http.ResponseWriter, r *http.Request
 
 	if err := distributor.decodeJSON(r, 1<<20); err != nil {
 		http.Error(w, "Invalid request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(distributor.Destinations) == 0 {
+		s.Logger.Warn("[Distributor] Got distributor without destinations")
+		http.Error(w, "At least one url must be configured", http.StatusBadRequest)
 		return
 	}
 
@@ -197,19 +205,48 @@ func (s *Server) DashboardStatsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) DistributorViewHandler(w http.ResponseWriter, r *http.Request) {
+	distributors, err := s.Store.GetAllDistributors(r.Context())
+	if err != nil {
+		http.Error(w, "Failed to load distributors", http.StatusInternalServerError)
+		return
+	}
+
 	data := DistributorPageData{
-		Title: "Distributors",
-		Distributors: []DistributorView{
-			{
-				ID:   "dist_123",
-				Name: "Payments",
-				Destinations: []DestinationView{
-					{URL: "https://service-a.com/webhook"},
-					{URL: "https://service-b.com/webhook"},
-				},
-			},
-		},
+		Title:        "Distributors",
+		Distributors: distributors,
 	}
 
 	templates.Pages["distributors.html"].ExecuteTemplate(w, "layout", data)
+}
+
+func (s *Server) EventsHandler(w http.ResponseWriter, r *http.Request) {
+	events, err := s.Store.getAllEvents(r.Context())
+	if err != nil {
+		http.Error(w, "Failed to load events", http.StatusInternalServerError)
+		return
+	}
+
+	data := EventsPageData{
+		Title:  "Events",
+		Events: events,
+	}
+
+	templates.Pages["events.html"].ExecuteTemplate(w, "layout", data)
+}
+
+func (s *Server) EventDetailHandler(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+
+	data, err := s.GetEventDetailPageData(r.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.Error(w, "Failed to load event", http.StatusInternalServerError)
+		return
+	}
+
+	templates.Pages["event_detail.html"].ExecuteTemplate(w, "layout", data)
 }

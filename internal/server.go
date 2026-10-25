@@ -73,6 +73,8 @@ func (s *Server) routes() {
 	s.Router.Get("/distributors", s.DistributorViewHandler)
 
 	s.Router.Get("/api/dashboard/stats", s.DashboardStatsHandler)
+	s.Router.Get("/events", s.EventsHandler)
+	s.Router.Get("/events/{id}", s.EventDetailHandler)
 	s.Router.Get("/test-static", func(w http.ResponseWriter, r *http.Request) {
 		data, err := static.Files.ReadFile("css/app.css")
 		if err != nil {

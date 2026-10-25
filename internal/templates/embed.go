@@ -5,7 +5,7 @@ import (
 	"html/template"
 )
 
-//go:embed layout.html dashboard.html distributors.html events.html event.html
+//go:embed layout.html dashboard.html distributors.html events.html event_detail.html
 var Files embed.FS
 
 var Pages map[string]*template.Template
@@ -17,7 +17,7 @@ func init() {
 		"dashboard.html",
 		"distributors.html",
 		"events.html",
-		"event.html",
+		"event_detail.html",
 	}
 
 	Pages = make(map[string]*template.Template, len(pages))

@@ -20,7 +20,7 @@
             </div>
 
             <nav class="nav">
-                <a href="/" class="nav-item active">
+                <a href="/" class="nav-item">
                     <span class="nav-icon">⌂</span>
                     Dashboard
                 </a>
@@ -33,11 +33,6 @@
                 <a href="/events" class="nav-item">
                     <span class="nav-icon">≡</span>
                     Events
-                </a>
-
-                <a href="/system" class="nav-item">
-                    <span class="nav-icon">⌁</span>
-                    System
                 </a>
             </nav>
 
@@ -57,6 +52,23 @@
         </main>
 
     </div>
+
+<script>
+(() => {
+    const currentPath = window.location.pathname;
+
+    document.querySelectorAll(".nav-item").forEach(link => {
+        const linkPath = new URL(link.href).pathname;
+
+        const isActive = linkPath === "/"
+            ? currentPath === "/"
+            : currentPath === linkPath ||
+              currentPath.startsWith(linkPath + "/");
+
+        link.classList.toggle("active", isActive);
+    });
+})();
+</script>
 </body>
 </html>
 {{ end }}

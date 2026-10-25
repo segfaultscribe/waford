@@ -36,6 +36,31 @@ func (s *Server) getDashboardData() (*DashboardData, error) {
 	return dashboardData, nil
 }
 
+func (s *Server) getDistributorData(ctx context.Context) (*DistributorView, error) {
+	return &DistributorView{}, nil
+}
+
+func (s *Server) GetEventDetailPageData(
+	ctx context.Context,
+	eventID string,
+) (EventDetailPageData, error) {
+	event, err := s.Store.GetEventDetail(ctx, eventID)
+	if err != nil {
+		return EventDetailPageData{}, err
+	}
+
+	deliveries, err := s.Store.GetDeliveriesByEventID(ctx, eventID)
+	if err != nil {
+		return EventDetailPageData{}, err
+	}
+
+	return EventDetailPageData{
+		Title:      "Event Details",
+		Event:      event,
+		Deliveries: deliveries,
+	}, nil
+}
+
 func SuccessRate(stats *DeliveryStats) float64 {
 	completed := stats.Successful + stats.Dead
 
@@ -44,4 +69,34 @@ func SuccessRate(stats *DeliveryStats) float64 {
 	}
 
 	return float64(stats.Successful) / float64(completed) * 100
+}
+
+func deriveEventStatus(
+	fannedOut bool,
+	total int,
+	successful int,
+	failed int,
+) string {
+	if !fannedOut {
+		return "processing"
+	}
+
+	if total == 0 {
+		return "pending"
+	}
+
+	if successful == total {
+		return "success"
+	}
+
+	if failed == total {
+		return "failed"
+	}
+
+	if failed > 0 && successful > 0 &&
+		successful+failed == total {
+		return "partial_failure"
+	}
+
+	return "processing"
 }

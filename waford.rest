@@ -38,7 +38,7 @@ Content-Type: application/json
 
 
 ### Add new event
-POST http://localhost:4242/distributors/01M4NNE06JTG5NKB94A7PGH5MV/events
+POST http://localhost:4242/distributors/01M4NNER56CMJD17M8KZ9V9XXS/events
 Content-Type: application/json
 X-hubris-war: bababooi
 Awesome-header: wawei

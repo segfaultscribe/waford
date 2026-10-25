@@ -1,0 +1,180 @@
+{{ define "event_detail" }}
+    {{ template "layout" . }}
+{{ end }}
+
+{{ define "content" }}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">WAFORD / EVENTS</div>
+        <h1>Event details</h1>
+        <p class="page-description">
+            Inspect the event payload and delivery outcomes.
+        </p>
+    </div>
+
+    <a href="/events" class="button button-secondary">
+        ← Back to events
+    </a>
+</header>
+
+<section class="content-section">
+
+    <!-- Event overview -->
+    <div class="event-detail-overview">
+        <div class="event-detail-heading">
+            <div>
+                <div class="section-label">EVENT ID</div>
+                <code class="event-detail-id">{{ .Event.ID }}</code>
+            </div>
+
+            <div>
+                {{ if eq .Event.Status "success" }}
+                    <span class="status status-success">Succeeded</span>
+                {{ else if eq .Event.Status "failed" }}
+                    <span class="status status-danger">Failed</span>
+                {{ else if eq .Event.Status "processing" }}
+                    <span class="status status-warning">Processing</span>
+                {{ else }}
+                    <span class="status status-pending">Pending</span>
+                {{ end }}
+            </div>
+        </div>
+
+        <div class="event-detail-stats">
+            <div class="event-stat">
+                <span class="muted">Total deliveries</span>
+                <strong>{{ .Event.TotalDeliveries }}</strong>
+            </div>
+
+            <div class="event-stat">
+                <span class="muted">Succeeded</span>
+                <strong>{{ .Event.SuccessfulDeliveries }}</strong>
+            </div>
+
+            <div class="event-stat">
+                <span class="muted">Failed</span>
+                <strong>{{ .Event.FailedDeliveries }}</strong>
+            </div>
+        </div>
+
+        <div class="event-detail-metadata">
+            <div>
+                <span class="section-label">DISTRIBUTOR</span>
+                <strong>{{ .Event.DistributorName }}</strong>
+                <span class="muted">{{ .Event.DistributorID }}</span>
+            </div>
+
+            <div>
+                <span class="section-label">RECEIVED</span>
+                <span>{{ .Event.CreatedAt }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Original event data -->
+    <section class="event-detail-section">
+        <div class="section-heading">
+            <div>
+                <h2>Payload</h2>
+                <p class="muted">Original event body received by Waford.</p>
+            </div>
+        </div>
+
+        <pre class="event-json"><code>{{ .Event.Payload }}</code></pre>
+    </section>
+
+    <section class="event-detail-section">
+        <div class="section-heading">
+            <div>
+                <h2>Metadata</h2>
+                <p class="muted">Metadata associated with this event.</p>
+            </div>
+        </div>
+
+        <pre class="event-json"><code>{{ .Event.Meta }}</code></pre>
+    </section>
+
+    <!-- Individual delivery outcomes -->
+    <section class="event-detail-section">
+        <div class="section-heading">
+            <div>
+                <h2>Deliveries</h2>
+                <p class="muted">
+                    Delivery status for each configured destination.
+                </p>
+            </div>
+        </div>
+
+        <div class="event-table-wrapper">
+            <table class="data-table events-table deliveries-table">
+                <thead>
+                    <tr>
+                        <th>Destination</th>
+                        <th>Status</th>
+                        <th>Retries</th>
+                        <th>Last error</th>
+                        <th>Updated</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {{ range .Deliveries }}
+                    <tr>
+                        <td>
+                            <div class="delivery-destination">
+                                <code>{{ .DestinationURL }}</code>
+                            </div>
+                            <span class="muted distributor-id">
+                                {{ .DestinationID }}
+                            </span>
+                        </td>
+
+                        <td>
+                            {{ if eq .Status "delivered" }}
+                                <span class="status status-success">Delivered</span>
+                            {{ else if eq .Status "dlq" }}
+                                <span class="status status-danger">Dead letter</span>
+                            {{ else if eq .Status "retry" }}
+                                <span class="status status-warning">Retrying</span>
+                            {{ else if eq .Status "in_flight" }}
+                                <span class="status status-warning">In flight</span>
+                            {{ else }}
+                                <span class="status status-pending">
+                                    {{ .Status }}
+                                </span>
+                            {{ end }}
+                        </td>
+
+                        <td>{{ .RetryCount }}</td>
+
+                        <td>
+                            {{ if .LastError }}
+                                <span class="delivery-error">{{ .LastError }}</span>
+                            {{ else }}
+                                <span class="muted">—</span>
+                            {{ end }}
+                        </td>
+
+                        <td class="event-timestamp">
+                            {{ .UpdatedAt }}
+                        </td>
+                    </tr>
+                    {{ else }}
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <h2>No deliveries</h2>
+                                <p>
+                                    No delivery records have been created
+                                    for this event yet.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</section>
+{{ end }}

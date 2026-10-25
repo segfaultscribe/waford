@@ -93,15 +93,62 @@ type DeliveryStats struct {
 
 type DistributorPageData struct {
 	Title        string
-	Distributors []DistributorView
+	Distributors []*DistributorView
 }
 
 type DistributorView struct {
 	ID           string
 	Name         string
-	Destinations []DestinationView
+	Destinations []string
 }
 
 type DestinationView struct {
 	URL string
+}
+
+type EventsPageData struct {
+	Title  string
+	Events []EventView
+}
+
+type EventView struct {
+	ID                   string
+	DistributorID        string
+	DistributorName      string
+	CreatedAt            string
+	Status               string
+	TotalDeliveries      int
+	SuccessfulDeliveries int
+	FailedDeliveries     int
+}
+
+type EventDetailPageData struct {
+	Title      string
+	Event      EventDetailView
+	Deliveries []DeliveryDetailView
+}
+
+type EventDetailView struct {
+	ID                   string
+	DistributorID        string
+	DistributorName      string
+	CreatedAt            string
+	Status               string
+	Payload              string
+	Meta                 string
+	TotalDeliveries      int
+	SuccessfulDeliveries int
+	FailedDeliveries     int
+}
+
+type DeliveryDetailView struct {
+	ID             string
+	DestinationID  string
+	DestinationURL string
+	Status         string
+	RetryCount     int
+	LastError      string
+	CreatedAt      string
+	UpdatedAt      string
+	DeadAt         string
 }

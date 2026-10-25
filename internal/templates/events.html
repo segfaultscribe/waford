@@ -1,9 +1,8 @@
 {{ define "events" }}
-{{ template "layout" . }}
+    {{ template "layout" . }}
 {{ end }}
 
 {{ define "content" }}
-
 <header class="page-header">
     <div>
         <div class="eyebrow">WAFORD</div>
@@ -15,30 +14,27 @@
 </header>
 
 <section class="content-section">
-
-    <div class="toolbar">
-
+    <div class="events-toolbar">
         <input
             type="search"
             id="event-search"
             class="search-input"
-            placeholder="Search event ID..."
+            placeholder="Search event ID or distributor..."
+            aria-label="Search events"
         >
 
-        <select id="event-status">
+        <select id="event-status" aria-label="Filter by status">
             <option value="">All statuses</option>
+            <option value="success">Succeeded</option>
+            <option value="processing">Processing</option>
             <option value="pending">Pending</option>
-            <option value="retry">Retrying</option>
-            <option value="succeeded">Succeeded</option>
-            <option value="dead">Dead</option>
+            <option value="partial_failure">Partial failure</option>
+            <option value="total_failure">Total failure</option>
         </select>
-
     </div>
 
     <div class="event-table-wrapper">
-
-        <table class="data-table">
-
+        <table class="data-table events-table">
             <thead>
                 <tr>
                     <th>Event</th>
@@ -50,50 +46,63 @@
             </thead>
 
             <tbody id="event-list">
-
                 {{ range .Events }}
-
                 <tr
                     class="event-row"
                     data-event-id="{{ .ID }}"
+                    data-distributor="{{ .DistributorName }}"
                     data-status="{{ .Status }}"
                 >
-
                     <td>
-                        <a href="/events/{{ .ID }}">
+                        <a class="event-link" href="/events/{{ .ID }}">
                             <code>{{ .ID }}</code>
                         </a>
                     </td>
 
                     <td>
-                        <div>{{ .DistributorName }}</div>
-                        <span class="muted">
+                        <div class="event-distributor">
+                            {{ .DistributorName }}
+                        </div>
+                        <span class="muted distributor-id">
                             {{ .DistributorID }}
                         </span>
                     </td>
 
-                    <td>
+                    <td class="event-timestamp">
                         {{ .CreatedAt }}
                     </td>
 
                     <td>
-                        {{ .SuccessfulDeliveries }}
-                        /
-                        {{ .TotalDeliveries }}
+                        <div class="delivery-count">
+                            <span>
+                                {{ .SuccessfulDeliveries }}/{{ .TotalDeliveries }}
+                            </span>
+                            <span class="muted delivery-label">succeeded</span>
+                        </div>
+
+                        {{ if gt .FailedDeliveries 0 }}
+                        <span class="failed-delivery-count">
+                            {{ .FailedDeliveries }} failed
+                        </span>
+                        {{ end }}
                     </td>
 
                     <td>
-                        {{ if eq .Status "delivered" }}
+                        {{ if eq .Status "success" }}
                             <span class="status status-success">
                                 Succeeded
                             </span>
-                        {{ else if eq .Status "retry" }}
+                        {{ else if eq .Status "partial_failure" }}
                             <span class="status status-warning">
-                                Retrying
+                                Partial failure
                             </span>
-                        {{ else if eq .Status "dlq" }}
+                        {{ else if eq .Status "total_failure" }}
                             <span class="status status-danger">
-                                Dead
+                                Total failure
+                            </span>
+                        {{ else if eq .Status "processing" }}
+                            <span class="status status-warning">
+                                Processing
                             </span>
                         {{ else }}
                             <span class="status status-pending">
@@ -101,79 +110,69 @@
                             </span>
                         {{ end }}
                     </td>
-
                 </tr>
-
                 {{ else }}
-
                 <tr>
                     <td colspan="5">
                         <div class="empty-state">
-                            <h2>No events</h2>
+                            <h2>No events yet</h2>
                             <p>
                                 Events received by Waford will appear here.
                             </p>
                         </div>
                     </td>
                 </tr>
-
                 {{ end }}
-
             </tbody>
-
         </table>
 
+        <div id="events-no-results" class="events-no-results hidden">
+            <p>No events match your search.</p>
+        </div>
     </div>
-
 </section>
 
 <script>
 (() => {
-
-    const search =
-        document.getElementById("event-search");
-
-    const status =
-        document.getElementById("event-status");
-
-    const rows =
-        document.querySelectorAll(".event-row");
+    const search = document.getElementById("event-search");
+    const status = document.getElementById("event-status");
+    const rows = document.querySelectorAll(".event-row");
+    const noResults = document.getElementById("events-no-results");
 
     function filterEvents() {
-
-        const searchValue =
-            search.value.toLowerCase();
-
-        const statusValue =
-            status.value;
+        const searchValue = search.value.trim().toLowerCase();
+        const statusValue = status.value;
+        let visibleCount = 0;
 
         rows.forEach(row => {
-
-            const eventID =
-                row.dataset.eventId.toLowerCase();
-
-            const eventStatus =
-                row.dataset.status;
+            const eventID = row.dataset.eventId.toLowerCase();
+            const distributor = row.dataset.distributor.toLowerCase();
+            const eventStatus = row.dataset.status;
 
             const matchesSearch =
-                !searchValue ||
-                eventID.includes(searchValue);
+                eventID.includes(searchValue) ||
+                distributor.includes(searchValue);
 
             const matchesStatus =
-                !statusValue ||
-                eventStatus === statusValue;
+                !statusValue || eventStatus === statusValue;
 
-            row.style.display =
-                matchesSearch && matchesStatus
-                    ? ""
-                    : "none";
+            const visible = matchesSearch && matchesStatus;
+
+            row.hidden = !visible;
+
+            if (visible) {
+                visibleCount++;
+            }
         });
+
+        noResults.classList.toggle(
+            "hidden",
+            rows.length === 0 || visibleCount > 0
+        );
     }
 
     search.addEventListener("input", filterEvents);
     status.addEventListener("change", filterEvents);
-
 })();
 </script>
-
 {{ end }}
